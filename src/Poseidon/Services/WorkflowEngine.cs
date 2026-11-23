@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using NLua;
 using Poseidon.Database.Core;
 using Poseidon.Database.Models;
 using Poseidon.Lua.Core;
@@ -78,24 +77,24 @@ public sealed class WorkflowEngine
                 : await _db.GetScriptContentAsync(node.LuaScriptId.Value, ct);
             if (string.IsNullOrEmpty(scriptSource))
             {
-                ulong stepId = await _db.CreateStepAsync(executionId, node.Id,
+                ulong stepIdA = await _db.CreateStepAsync(executionId, node.Id,
                     JsonSerializer.Serialize(inputs), ct);
-                await _db.CompleteStepAsync(stepId, "failed",
+                await _db.CompleteStepAsync(stepIdA, "failed",
                     error: $"node {node.Id} has no Lua script", ct: ct);
                 onStep?.Invoke(new StepEvent { NodeId = node.Id, Status = "failed",
                     Error = $"node {node.Id} has no Lua script" });
                 return false;
             }
 
-            ulong stepId = await _db.CreateStepAsync(executionId, node.Id,
+            ulong stepIdB = await _db.CreateStepAsync(executionId, node.Id,
                 JsonSerializer.Serialize(inputs), ct);
 
             using var engine = CreateEngine(sharedState, log);
-            LuaTable module;
+            NLua.LuaTable module;
             try { module = engine.LoadScript("node_" + node.Id, scriptSource); }
             catch (Exception ex)
             {
-                await _db.CompleteStepAsync(stepId, "failed", error: ex.Message, ct: ct);
+                await _db.CompleteStepAsync(stepIdB, "failed", error: ex.Message, ct: ct);
                 onStep?.Invoke(new StepEvent { NodeId = node.Id, Status = "failed", Error = ex.Message });
                 return false;
             }
@@ -119,12 +118,12 @@ public sealed class WorkflowEngine
             }
             catch (Exception ex)
             {
-                await _db.CompleteStepAsync(stepId, "failed", error: ex.Message, ct: ct);
+                await _db.CompleteStepAsync(stepIdB, "failed", error: ex.Message, ct: ct);
                 onStep?.Invoke(new StepEvent { NodeId = node.Id, Status = "failed", Error = ex.Message });
                 return false;
             }
 
-            await _db.CompleteStepAsync(stepId, "completed",
+            await _db.CompleteStepAsync(stepIdB, "completed",
                 outputJson: JsonSerializer.Serialize(result), ct: ct);
             onStep?.Invoke(new StepEvent
             {
@@ -163,8 +162,8 @@ public sealed class WorkflowEngine
                 if (!hasErrorEdge)
                 {
                     skippedNodes.Add(node.Id);
-                    ulong stepId = await _db.CreateStepAsync(executionId, node.Id, null, ct);
-                    await _db.CompleteStepAsync(stepId, "skipped", ct: ct);
+                    ulong stepIdC = await _db.CreateStepAsync(executionId, node.Id, null, ct);
+                    await _db.CompleteStepAsync(stepIdC, "skipped", ct: ct);
                     EnqueueSuccessors(node);
                     continue;
                 }
@@ -197,10 +196,10 @@ public sealed class WorkflowEngine
     private LuaEngine CreateEngine(Dictionary<string, object?> sharedState, Action<string> log)
     {
         var lua = new NLua.Lua();
-        lua.LoadString("io = nil; os = nil; package = nil; loadfile = nil; dofile = nil;").Call();
+        lua.LoadString("io = nil; os = nil; package = nil; loadfile = nil; dofile = nil;", "sandbox").Call();
 
         string sandbox = Path.Combine(AppContext.BaseDirectory, "scripts", "sandbox");
-        var libs = new LuaLib[]
+        var libs = new Poseidon.Lua.Lib.LuaLib[]
         {
             new DbLib(lua, _db),
             new HttpLib(lua),

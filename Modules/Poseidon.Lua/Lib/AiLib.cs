@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -22,16 +21,16 @@ namespace Poseidon.Lua.Lib;
 public sealed class AiLib : LuaLib
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(60) };
-    private readonly Lua _lua;
+    private readonly NLua.Lua _lua;
 
-    public AiLib(Lua lua)
+    public AiLib(NLua.Lua lua)
     {
         _lua = lua ?? throw new ArgumentNullException(nameof(lua));
     }
 
     public override string Name => "ai";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["ai"] = new Api(this);
     }
@@ -128,7 +127,7 @@ public sealed class AiLib : LuaLib
 
         private LuaTable MakeResponse(string model, string content)
         {
-            LuaTable t = _lib._lua.NewTable();
+            LuaTable t = _lib._lua.NewTable("");
             t["content"] = content;
             t["model"] = model;
             return t;

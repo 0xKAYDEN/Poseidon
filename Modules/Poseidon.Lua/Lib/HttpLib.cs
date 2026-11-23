@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -19,16 +18,16 @@ public sealed class HttpLib : LuaLib
         DefaultRequestHeaders = { UserAgent = { new ProductInfoHeaderValue("Poseidon", "1.0") } }
     };
 
-    private readonly Lua _lua;
+    private readonly NLua.Lua _lua;
 
-    public HttpLib(Lua lua)
+    public HttpLib(NLua.Lua lua)
     {
         _lua = lua ?? throw new ArgumentNullException(nameof(lua));
     }
 
     public override string Name => "http";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         // Expose the API object as the `http` global table.
         lua["http"] = new Api(this);
@@ -77,10 +76,10 @@ public sealed class HttpLib : LuaLib
 
     private LuaTable ToResponseTable(System.Net.Http.HttpResponseMessage response)
     {
-        LuaTable t = _lua.NewTable();
+        LuaTable t = _lua.NewTable("");
         t["status_code"] = (int)response.StatusCode;
 
-        LuaTable hdr = _lua.NewTable();
+        LuaTable hdr = _lua.NewTable("");
         foreach (var h in response.Headers) hdr[h.Key] = string.Join(", ", h.Value);
         if (response.Content is not null)
         {

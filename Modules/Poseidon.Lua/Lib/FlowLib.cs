@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -27,7 +26,7 @@ public sealed class FlowLib : LuaLib
 
     public override string Name => "flow";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["flow"] = new Api(this);
     }

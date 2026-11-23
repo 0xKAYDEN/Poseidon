@@ -2,7 +2,6 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 using NLua;
-using Lua = NLua.Lua;
 using Poseidon.Cryptography.Crypto;
 
 namespace Poseidon.Lua.Lib;
@@ -18,7 +17,7 @@ public sealed class CryptoLib : LuaLib
 {
     public override string Name => "crypto";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["crypto"] = new Api();
     }

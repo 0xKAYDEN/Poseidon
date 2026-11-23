@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -15,9 +14,9 @@ namespace Poseidon.Lua.Lib;
 public sealed class FsLib : LuaLib
 {
     private readonly string _root;
-    private readonly Lua _lua;
+    private readonly NLua.Lua _lua;
 
-    public FsLib(string sandboxRoot, Lua lua)
+    public FsLib(string sandboxRoot, NLua.Lua lua)
     {
         _root = Path.GetFullPath(sandboxRoot ?? throw new ArgumentNullException(nameof(sandboxRoot)));
         Directory.CreateDirectory(_root);
@@ -26,7 +25,7 @@ public sealed class FsLib : LuaLib
 
     public override string Name => "fs";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["fs"] = new Api(this);
     }
@@ -84,8 +83,8 @@ public sealed class FsLib : LuaLib
     private LuaTable List(string? directory)
     {
         string full = Resolve(directory ?? string.Empty);
-        if (!Directory.Exists(full)) return _lua.NewTable();
-        LuaTable list = _lua.NewTable();
+        if (!Directory.Exists(full)) return _lua.NewTable("");
+        LuaTable list = _lua.NewTable("");
         int index = 1;
         foreach (var entry in Directory.GetFileSystemEntries(full))
         {

@@ -1,5 +1,4 @@
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -9,5 +8,5 @@ namespace Poseidon.Lua.Lib;
 public abstract class LuaLib
 {
     public abstract string Name { get; }
-    public abstract void Register(LuaEngine engine, Lua lua);
+    public abstract void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua);
 }

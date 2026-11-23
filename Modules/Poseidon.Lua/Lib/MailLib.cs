@@ -1,6 +1,5 @@
 using System.Text.Json;
 using NLua;
-using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -20,7 +19,7 @@ public sealed class MailLib : LuaLib
 
     public override string Name => "mail";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["mail"] = new Api(this);
     }

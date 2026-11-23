@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using NLua;
-using Lua = NLua.Lua;
 using Poseidon.Database.Core;
 
 namespace Poseidon.Lua.Lib;
@@ -15,10 +14,10 @@ namespace Poseidon.Lua.Lib;
 /// </summary>
 public sealed class DbLib : LuaLib
 {
-    private readonly Lua _lua;
+    private readonly NLua.Lua _lua;
     private readonly PoseidonDb _db;
 
-    public DbLib(Lua lua, PoseidonDb db)
+    public DbLib(NLua.Lua lua, PoseidonDb db)
     {
         _lua = lua ?? throw new ArgumentNullException(nameof(lua));
         _db = db ?? throw new ArgumentNullException(nameof(db));
@@ -26,7 +25,7 @@ public sealed class DbLib : LuaLib
 
     public override string Name => "db";
 
-    public override void Register(LuaEngine engine, Lua lua)
+    public override void Register(Poseidon.Lua.Core.LuaEngine engine, NLua.Lua lua)
     {
         lua["db"] = new Api(this);
     }
@@ -48,11 +47,11 @@ public sealed class DbLib : LuaLib
     private LuaTable Query(string sql, object?[] parameters)
     {
         List<Dictionary<string, object?>> rows = _db.QueryAsync(sql, parameters).GetAwaiter().GetResult();
-        LuaTable list = _lua.NewTable();
+        LuaTable list = _lua.NewTable("");
         int index = 1;
         foreach (var row in rows)
         {
-            LuaTable t = _lua.NewTable();
+            LuaTable t = _lua.NewTable("");
             foreach (var kv in row)
             {
                 t[kv.Key] = ToLuaValue(kv.Value);
