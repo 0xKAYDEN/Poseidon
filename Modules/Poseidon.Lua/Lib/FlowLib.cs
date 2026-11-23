@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using NLua;
+using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 

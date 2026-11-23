@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using NLua;
+using Lua = NLua.Lua;
 using Poseidon.Database.Core;
 
 namespace Poseidon.Lua.Lib;

@@ -2,6 +2,7 @@ using System;
 using System.Security.Cryptography;
 using System.Text;
 using NLua;
+using Lua = NLua.Lua;
 using Poseidon.Cryptography.Crypto;
 
 namespace Poseidon.Lua.Lib;

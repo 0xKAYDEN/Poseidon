@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using NLua;
+using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 

@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\..\\Modules\\Poseidon.Lua\\Poseidon.Lua.csproj" />
-    <ProjectReference Include="..\\..\\Modules\\Poseidon.Cryptography\\Poseidon.Cryptography.csproj" />
-    <ProjectReference Include="..\\Poseidon.Database\\Poseidon.Database.csproj" />
+    <ProjectReference Include="../../Modules/Poseidon.Lua/Poseidon.Lua.csproj" />
+    <ProjectReference Include="../../Modules/Poseidon.Cryptography/Poseidon.Cryptography.csproj" />
+    <ProjectReference Include="../Poseidon.Database/Poseidon.Database.csproj" />
   </ItemGroup>
 
 </Project>

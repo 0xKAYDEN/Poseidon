@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using NLua;
+using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 

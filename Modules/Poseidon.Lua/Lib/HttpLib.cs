@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using NLua;
+using Lua = NLua.Lua;
 
 namespace Poseidon.Lua.Lib;
 
