@@ -7,7 +7,8 @@
         mc:Ignorable="d"
         Title="Poseidon — n8n-like Automation (Lua)"
         Height="720" Width="1200"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BackgroundBrush}">
     <Window.Resources>
         <!-- Dark mode palette -->
         <SolidColorBrush x:Key="BackgroundBrush" Color="#1E1E1E"/>
@@ -25,7 +26,6 @@
         <SolidColorBrush x:Key="ButtonHoverBrush" Color="#4E4E52"/>
 
         <Style TargetType="Window">
-            <Setter Property="Background" Value="{StaticResource BackgroundBrush}"/>
             <Setter Property="TextElement.Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="TextElement.FontFamily" Value="Segoe UI"/>
             <Setter Property="TextElement.FontSize" Value="13"/>
@@ -43,6 +43,20 @@
             <Setter Property="Padding" Value="5"/>
         </Style>
 
+        <ControlTemplate x:Key="ButtonTemplate" TargetType="Button">
+            <Border Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource ButtonBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
@@ -50,21 +64,7 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,5"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <ControlTemplate TargetType="Button">
-                    <Border Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="3">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter>
+            <Setter Property="Template" Value="{StaticResource ButtonTemplate}"/>
         </Style>
 
         <Style TargetType="ListBox">
@@ -81,7 +81,7 @@
     <Grid>
         <!-- Top toolbar -->
         <DockPanel LastChildFill="True">
-            <ToolBarTray DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <ToolBarTray DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}">
                 <ToolBar Band="0" BandIndex="0" Background="{StaticResource SurfaceBrush}" BorderThickness="0">
                     <Button Content="New Workflow" Click="NewWorkflow_Click" ToolTip="Create a new workflow"/>
                     <Button Content="Open" Click="OpenWorkflow_Click" ToolTip="Open existing workflow"/>
@@ -112,7 +112,7 @@
                 <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                     <DockPanel>
                         <TextBlock Text="NODES" DockPanel.Dock="Top" Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontWeight="Bold" Margin="10,5" FontSize="11" TextTransform="Uppercase"/>
+                                   FontWeight="Bold" Margin="10,5" FontSize="11"/>
                         <ListBox x:Name="NodePalette" DockPanel.Dock="Bottom" Background="{StaticResource SurfaceBrush}"
                                  BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemContainerStyle>
@@ -148,12 +148,12 @@
                 <Border Grid.Column="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
                     <DockPanel>
                         <TextBlock Text="PROPERTIES" DockPanel.Dock="Top" Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontWeight="Bold" Margin="10,5" FontSize="11" TextTransform="Uppercase"/>
+                                   FontWeight="Bold" Margin="10,5" FontSize="11"/>
                         <ScrollViewer DockPanel.Dock="Top" MaxHeight="140">
                             <StackPanel x:Name="PropertiesPanel" Margin="10"/>
                         </ScrollViewer>
                         <TextBlock Text="LUA SCRIPT" DockPanel.Dock="Top" Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontWeight="Bold" Margin="10,10,10,5" FontSize="11" TextTransform="Uppercase"/>
+                                   FontWeight="Bold" Margin="10,10,10,5" FontSize="11"/>
                         <TextBox x:Name="ScriptEditor" DockPanel.Dock="Bottom" AcceptsReturn="True"
                                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                                  FontFamily="Consolas" FontSize="12"
@@ -169,7 +169,7 @@
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
                 <DockPanel>
                     <TextBlock Text="EXECUTION LOG" DockPanel.Dock="Top" Foreground="{StaticResource TextSecondaryBrush}"
-                               FontWeight="Bold" Margin="10,5" FontSize="11" TextTransform="Uppercase"/>
+                               FontWeight="Bold" Margin="10,5" FontSize="11"/>
                     <ListBox x:Name="ExecutionLog" DockPanel.Dock="Bottom" Background="{StaticResource BackgroundBrush}"
                              BorderThickness="0" Foreground="{StaticResource TextPrimaryBrush}"
                              FontFamily="Consolas" FontSize="11"/>

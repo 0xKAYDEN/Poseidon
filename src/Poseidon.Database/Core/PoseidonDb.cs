@@ -35,10 +35,10 @@ public sealed class PoseidonDb : IDisposable
             Database = _config.Schema,
             SslMode = MySqlSslMode.Preferred,
             AllowPublicKeyRetrieval = true,
-            CommandTimeout = 30,
             Pooling = true,
             MinimumPoolSize = 0,
-            MaximumPoolSize = 50
+            MaximumPoolSize = 50,
+            DefaultCommandTimeout = 30
         };
         _connectionString = cs.ConnectionString;
     }
