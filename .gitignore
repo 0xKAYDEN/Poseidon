@@ -1,0 +1,38 @@
+# Environment files (never commit real secrets)
+.env
+.env.local
+*.env
+
+# Build output
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userprefs
+
+# Visual Studio
+.vs/
+*.slnx
+*.dotsettings.user
+
+# NuGet
+*.nupkg
+*.nupkg.symlink
+*.nuget.props
+*.nuget.targets
+packages.lock.json
+
+# .NET
+*.dll
+*.pdb
+*.exe
+*.app
+
+# IDE
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
