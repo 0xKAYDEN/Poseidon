@@ -368,22 +368,22 @@ public partial class MainWindow : Window
         // Connector drag: update preview line
         if (_dragConnector is not null && _previewLine is not null)
         {
-            var pos = e.GetPosition(WorkflowCanvas);
-            _previewLine.X2 = pos.X;
-            _previewLine.Y2 = pos.Y;
+            var dragPos = e.GetPosition(WorkflowCanvas);
+            _previewLine.X2 = dragPos.X;
+            _previewLine.Y2 = dragPos.Y;
             e.Handled = true;
             return;
         }
 
         if (!_isDraggingNode || _dragSourceNode != node) return;
 
-        var pos = e.GetPosition(WorkflowCanvas);
-        Canvas.SetLeft(node, pos.X - _dragOffset.X);
-        Canvas.SetTop(node, pos.Y - _dragOffset.Y);
+        var dragPos = e.GetPosition(WorkflowCanvas);
+        Canvas.SetLeft(node, dragPos.X - _dragOffset.X);
+        Canvas.SetTop(node, dragPos.Y - _dragOffset.Y);
 
         var vm = (NodeViewModel)node.DataContext;
-        vm.X = pos.X - _dragOffset.X;
-        vm.Y = pos.Y - _dragOffset.Y;
+        vm.X = dragPos.X - _dragOffset.X;
+        vm.Y = dragPos.Y - _dragOffset.Y;
 
         UpdateEdgesForNode(node);
         e.Handled = true;
@@ -468,7 +468,8 @@ public partial class MainWindow : Window
     private void RemoveNode(NodeView node)
     {
         var vm = (NodeViewModel)node.DataContext;
-        _edges.RemoveWhere(e => e.SourceNodeId == vm.Id || e.TargetNodeId == vm.Id);
+        var edgesToRemove = _edges.Where(e => e.SourceNodeId == vm.Id || e.TargetNodeId == vm.Id).ToList();
+        foreach (var edge in edgesToRemove) _edges.Remove(edge);
         _nodes.Remove(vm);
         WorkflowCanvas.Children.Remove(node);
     }

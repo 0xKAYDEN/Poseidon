@@ -202,12 +202,12 @@ public sealed class WorkflowEngine
         var libs = new Poseidon.Lua.Lib.LuaLib[]
         {
             new DbLib(lua, _db),
-            new HttpLib(lua),
+            new HttpLib(),
             new FsLib(sandbox),
             new CryptoLib(),
             new FlowLib(sharedState, log),
             new MailLib(log),
-            new AiLib(lua)
+            new AiLib()
         };
 
         var engine = new LuaEngine(_nodeTimeout, libs);
