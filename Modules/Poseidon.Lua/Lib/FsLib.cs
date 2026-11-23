@@ -88,7 +88,8 @@ public sealed class FsLib : LuaLib
         int index = 1;
         foreach (var entry in Directory.GetFileSystemEntries(full))
         {
-            list.RawSet(index++, Path.GetFileName(entry));
+            list[index] = Path.GetFileName(entry);
+            index++;
         }
         return list;
     }

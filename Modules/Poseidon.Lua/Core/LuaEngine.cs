@@ -90,7 +90,7 @@ public sealed class LuaEngine : IDisposable
         LuaTable table = _lua.NewTable("");
         foreach (var kv in context)
         {
-            SetTableValue(table, kv.Key, ToLuaValue(kv.Value));
+            table[kv.Key] = ToLuaValue(kv.Value);
         }
         return table;
     }
@@ -132,7 +132,7 @@ public sealed class LuaEngine : IDisposable
         LuaTable table = _lua.NewTable("");
         foreach (var kv in dict)
         {
-            SetTableValue(table, kv.Key, ToLuaValue(kv.Value));
+            table[kv.Key] = ToLuaValue(kv.Value);
         }
         return table;
     }
@@ -150,12 +150,6 @@ public sealed class LuaEngine : IDisposable
             nil _ => null!,
             _ => value?.ToString() ?? string.Empty
         };
-    }
-
-    /// <summary>Sets a value on a LuaTable using NLua's RawSet to avoid indexer issues.</summary>
-    private static void SetTableValue(LuaTable table, object key, object value)
-    {
-        table.RawSet(key, value);
     }
 
     public void Dispose()

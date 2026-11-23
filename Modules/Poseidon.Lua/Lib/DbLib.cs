@@ -54,9 +54,10 @@ public sealed class DbLib : LuaLib
             LuaTable t = _lua.NewTable("");
             foreach (var kv in row)
             {
-                t.RawSet(kv.Key, ToLuaValue(kv.Value));
+                t[kv.Key] = ToLuaValue(kv.Value);
             }
-            list.RawSet(index++, t);
+            list[index] = t;
+            index++;
         }
         return list;
     }
