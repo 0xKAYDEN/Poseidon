@@ -77,16 +77,16 @@ public sealed class HttpLib : LuaLib
     private LuaTable ToResponseTable(System.Net.Http.HttpResponseMessage response)
     {
         LuaTable t = _lua.NewTable("");
-        t["status_code"] = (int)response.StatusCode;
+        t.RawSet("status_code", (int)response.StatusCode);
 
         LuaTable hdr = _lua.NewTable("");
-        foreach (var h in response.Headers) hdr[h.Key] = string.Join(", ", h.Value);
+        foreach (var h in response.Headers) hdr.RawSet(h.Key, string.Join(", ", h.Value));
         if (response.Content is not null)
         {
-            foreach (var h in response.Content.Headers) hdr[h.Key] = string.Join(", ", h.Value);
+            foreach (var h in response.Content.Headers) hdr.RawSet(h.Key, string.Join(", ", h.Value));
         }
-        t["headers"] = hdr;
-        t["body"] = response.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        t.RawSet("headers", hdr);
+        t.RawSet("body", response.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty);
         return t;
     }
 }

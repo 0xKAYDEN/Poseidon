@@ -128,8 +128,8 @@ public sealed class AiLib : LuaLib
         private LuaTable MakeResponse(string model, string content)
         {
             LuaTable t = _lib._lua.NewTable("");
-            t["content"] = content;
-            t["model"] = model;
+            t.RawSet("content", content);
+            t.RawSet("model", model);
             return t;
         }
     }
