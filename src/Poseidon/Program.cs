@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using DotNetEnv;
 using Microsoft.AspNetCore.Http;
 using Poseidon.Cryptography.Crypto;
 using Poseidon.Database.Core;
@@ -10,6 +11,9 @@ using Poseidon.Database.Models;
 using Poseidon.Lua.Core;
 using Poseidon.Lua.Lib;
 using Poseidon.Services;
+
+// Load .env file into environment variables (if present)
+Env.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
