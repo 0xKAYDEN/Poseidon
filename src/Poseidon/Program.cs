@@ -68,7 +68,8 @@ app.Use(async (context, next) =>
             return;
         }
         string token = auth["Bearer ".Length..].Trim();
-        if (!builder.Services.GetRequiredService<JwtService>().ValidateToken(token, out var claims))
+        var jwtService = app.Services.GetRequiredService<JwtService>();
+        if (!jwtService.ValidateToken(token, out var claims))
         {
             context.Response.StatusCode = 401;
             await context.Response.WriteAsJsonAsync(new { error = "invalid token" });
@@ -80,7 +81,7 @@ app.Use(async (context, next) =>
 });
 
 // ---------------- auth ----------------
-app.MapPost("/api/auth/login", async (HttpContext context) =>
+app.MapPost("/api/auth/login", async (HttpContext context, JwtService jwtService) =>
 {
     var req = await context.Request.ReadFromJsonAsync<LoginRequest>();
     if (req is null || req.Username != adminUser)
@@ -97,8 +98,8 @@ app.MapPost("/api/auth/login", async (HttpContext context) =>
         return;
     }
 
-    string token = builder.Services.GetRequiredService<JwtService>().CreateToken(
-        new Dictionary<string, string> { ["sub"] = req.Username }, TimeSpan.FromHours(8));
+    string token = jwtService.CreateToken(
+        new Dictionary<string, object> { ["sub"] = req.Username }, TimeSpan.FromHours(8));
     await context.Response.WriteAsJsonAsync(new { token });
 });
 
@@ -150,7 +151,7 @@ app.MapGet("/api/executions/{id}", async (ulong id, PoseidonDb db) =>
 app.MapGet("/api/executions/{id}/steps", async (ulong id, PoseidonDb db) => Results.Ok(new { id, steps = System.Array.Empty<object>() }));
 
 // ---------------- encrypted websocket (client channel) ----------------
-app.MapGet("/ws", async (HttpContext context, SessionManager sessions) =>
+app.MapGet("/ws", async (HttpContext context, SessionManager sessions, PoseidonDb db, WorkflowEngine engine, JwtService jwtService) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -176,7 +177,7 @@ app.MapGet("/ws", async (HttpContext context, SessionManager sessions) =>
         channel.Establish(clientKey);
 
         if (!string.IsNullOrEmpty(jwt) &&
-            !builder.Services.GetRequiredService<JwtService>().ValidateToken(jwt, out _))
+            !jwtService.ValidateToken(jwt, out _))
         {
             await channel.SendFrameAsync(webSocket, new { type = "error", error = "unauthorized" });
             return;

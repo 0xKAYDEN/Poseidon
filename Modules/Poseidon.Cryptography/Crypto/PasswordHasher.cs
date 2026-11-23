@@ -27,7 +27,7 @@ public static class PasswordHasher
         if (password is null) throw new ArgumentNullException(nameof(password));
         if (hashedPassword is null || !hashedPassword.StartsWith(Marker, StringComparison.Ordinal)) return false;
 
-        var parts = hashedPassword.AsSpan(Marker.Length).Split('$');
+        var parts = hashedPassword.Substring(Marker.Length).Split('$');
         if (parts.Length != 2) return false;
 
         if (!int.TryParse(parts[0], out int iterations)) return false;

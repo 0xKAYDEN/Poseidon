@@ -22,7 +22,7 @@ public sealed class EcdhKeyAgreement : IDisposable
     public byte[] DeriveKey(byte[] otherPublicKeySpki)
     {
         using var other = ECDiffieHellman.Create();
-        other.ImportSubjectPublicKeyInfo(otherPublicKeySpki);
+        other.ImportSubjectPublicKeyInfo(otherPublicKeySpki, out _);
         byte[] shared = _ecdh.DeriveKeyFromHash(other.PublicKey, HashAlgorithmName.SHA256);
         return shared; // 256 bits for Curve25519
     }

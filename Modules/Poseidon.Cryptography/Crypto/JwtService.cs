@@ -19,7 +19,7 @@ public sealed class JwtService
         _signingKey = signingKey;
     }
 
-    public string CreateToken(IDictionary<string, string> claims, TimeSpan ttl)
+    public string CreateToken(IDictionary<string, object> claims, TimeSpan ttl)
     {
         if (claims is null) throw new ArgumentNullException(nameof(claims));
 
@@ -89,7 +89,7 @@ public sealed class JwtService
         return Convert.FromBase64String(s);
     }
 
-    private static byte[] Sign(byte[] data)
+    private byte[] Sign(byte[] data)
     {
         using var hmac = new HMACSHA256(_signingKey);
         return hmac.ComputeHash(data);
