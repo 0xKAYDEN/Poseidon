@@ -1,0 +1,188 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "F:\\Poseidon\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{B3731A18-D29B-E577-563A-8A38F0ECFDFC}|src\\Poseidon\\Poseidon.csproj|f:\\poseidon\\src\\poseidon\\poseidon.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
+      "RelativeMoniker": "D:0:0:{B3731A18-D29B-E577-563A-8A38F0ECFDFC}|src\\Poseidon\\Poseidon.csproj|solutionrelative:src\\poseidon\\poseidon.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{332D4F94-F0A1-1BB5-827F-D5DAD717A603}|src\\Poseidon.Network\\Poseidon.Network.csproj|f:\\poseidon\\src\\poseidon.network\\models\\anthropic.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{332D4F94-F0A1-1BB5-827F-D5DAD717A603}|src\\Poseidon.Network\\Poseidon.Network.csproj|solutionrelative:src\\poseidon.network\\models\\anthropic.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{332D4F94-F0A1-1BB5-827F-D5DAD717A603}|src\\Poseidon.Network\\Poseidon.Network.csproj|f:\\poseidon\\src\\poseidon.network\\models\\openai.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{332D4F94-F0A1-1BB5-827F-D5DAD717A603}|src\\Poseidon.Network\\Poseidon.Network.csproj|solutionrelative:src\\poseidon.network\\models\\openai.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B468A575-E362-E116-AD8D-195C840D712E}|src\\Poseidon.Database\\Poseidon.Database.csproj|f:\\poseidon\\src\\poseidon.database\\model\\actionmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B468A575-E362-E116-AD8D-195C840D712E}|src\\Poseidon.Database\\Poseidon.Database.csproj|solutionrelative:src\\poseidon.database\\model\\actionmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B468A575-E362-E116-AD8D-195C840D712E}|src\\Poseidon.Database\\Poseidon.Database.csproj|f:\\poseidon\\src\\poseidon.database\\core\\configrations\\databaseconfigrations.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B468A575-E362-E116-AD8D-195C840D712E}|src\\Poseidon.Database\\Poseidon.Database.csproj|solutionrelative:src\\poseidon.database\\core\\configrations\\databaseconfigrations.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9CF7658A-302E-47BE-8FE6-385D6B7DFA93}|Modules\\Poseidon.Lua\\Poseidon.Lua.csproj|f:\\poseidon\\modules\\poseidon.lua\\io\\scriptmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9CF7658A-302E-47BE-8FE6-385D6B7DFA93}|Modules\\Poseidon.Lua\\Poseidon.Lua.csproj|solutionrelative:modules\\poseidon.lua\\io\\scriptmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B3731A18-D29B-E577-563A-8A38F0ECFDFC}|src\\Poseidon\\Poseidon.csproj|f:\\poseidon\\src\\poseidon\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{B3731A18-D29B-E577-563A-8A38F0ECFDFC}|src\\Poseidon\\Poseidon.csproj|solutionrelative:src\\poseidon\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{9CF7658A-302E-47BE-8FE6-385D6B7DFA93}|Modules\\Poseidon.Lua\\Poseidon.Lua.csproj|f:\\poseidon\\modules\\poseidon.lua\\abstruction\\basehandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{9CF7658A-302E-47BE-8FE6-385D6B7DFA93}|Modules\\Poseidon.Lua\\Poseidon.Lua.csproj|solutionrelative:modules\\poseidon.lua\\abstruction\\basehandler.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{FEEEBA44-CBB0-435E-A2ED-4D57A43757A0}|Client\\PoseidonClient\\PoseidonClient.csproj|f:\\poseidon\\client\\poseidonclient\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{FEEEBA44-CBB0-435E-A2ED-4D57A43757A0}|Client\\PoseidonClient\\PoseidonClient.csproj|solutionrelative:client\\poseidonclient\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{FEEEBA44-CBB0-435E-A2ED-4D57A43757A0}|Client\\PoseidonClient\\PoseidonClient.csproj|f:\\poseidon\\client\\poseidonclient\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{FEEEBA44-CBB0-435E-A2ED-4D57A43757A0}|Client\\PoseidonClient\\PoseidonClient.csproj|solutionrelative:client\\poseidonclient\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Poseidon",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon\\Poseidon.csproj",
+              "RelativeDocumentMoniker": "src\\Poseidon\\Poseidon.csproj",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon\\Poseidon.csproj",
+              "RelativeToolTip": "src\\Poseidon\\Poseidon.csproj",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-11-22T13:00:37.301Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "OpenAI.cs",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon.Network\\Models\\OpenAI.cs",
+              "RelativeDocumentMoniker": "src\\Poseidon.Network\\Models\\OpenAI.cs",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon.Network\\Models\\OpenAI.cs",
+              "RelativeToolTip": "src\\Poseidon.Network\\Models\\OpenAI.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwsAAAAwAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-22T11:43:01.945Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Anthropic.cs",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon.Network\\Models\\Anthropic.cs",
+              "RelativeDocumentMoniker": "src\\Poseidon.Network\\Models\\Anthropic.cs",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon.Network\\Models\\Anthropic.cs",
+              "RelativeToolTip": "src\\Poseidon.Network\\Models\\Anthropic.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwcAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-22T11:42:54.118Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "ActionModel.cs",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon.Database\\Model\\ActionModel.cs",
+              "RelativeDocumentMoniker": "src\\Poseidon.Database\\Model\\ActionModel.cs",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon.Database\\Model\\ActionModel.cs",
+              "RelativeToolTip": "src\\Poseidon.Database\\Model\\ActionModel.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwwAAAAmAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T22:55:23.767Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "DatabaseConfigrations.cs",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon.Database\\Core\\Configrations\\DatabaseConfigrations.cs",
+              "RelativeDocumentMoniker": "src\\Poseidon.Database\\Core\\Configrations\\DatabaseConfigrations.cs",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon.Database\\Core\\Configrations\\DatabaseConfigrations.cs",
+              "RelativeToolTip": "src\\Poseidon.Database\\Core\\Configrations\\DatabaseConfigrations.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwsAAAA6AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T22:53:13.375Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "Program.cs",
+              "DocumentMoniker": "F:\\Poseidon\\src\\Poseidon\\Program.cs",
+              "RelativeDocumentMoniker": "src\\Poseidon\\Program.cs",
+              "ToolTip": "F:\\Poseidon\\src\\Poseidon\\Program.cs",
+              "RelativeToolTip": "src\\Poseidon\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T19:50:06.853Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "ScriptManager.cs",
+              "DocumentMoniker": "F:\\Poseidon\\Modules\\Poseidon.Lua\\IO\\ScriptManager.cs",
+              "RelativeDocumentMoniker": "Modules\\Poseidon.Lua\\IO\\ScriptManager.cs",
+              "ToolTip": "F:\\Poseidon\\Modules\\Poseidon.Lua\\IO\\ScriptManager.cs",
+              "RelativeToolTip": "Modules\\Poseidon.Lua\\IO\\ScriptManager.cs",
+              "ViewState": "AgIAAAMAAAAAAAAAAEBUwCAAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T19:37:40.735Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "BaseHandler.cs",
+              "DocumentMoniker": "F:\\Poseidon\\Modules\\Poseidon.Lua\\Abstruction\\BaseHandler.cs",
+              "RelativeDocumentMoniker": "Modules\\Poseidon.Lua\\Abstruction\\BaseHandler.cs",
+              "ToolTip": "F:\\Poseidon\\Modules\\Poseidon.Lua\\Abstruction\\BaseHandler.cs",
+              "RelativeToolTip": "Modules\\Poseidon.Lua\\Abstruction\\BaseHandler.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwsAAABMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T19:32:51.132Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "F:\\Poseidon\\Client\\PoseidonClient\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "Client\\PoseidonClient\\MainWindow.xaml",
+              "ToolTip": "F:\\Poseidon\\Client\\PoseidonClient\\MainWindow.xaml",
+              "RelativeToolTip": "Client\\PoseidonClient\\MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-11-21T19:29:18.744Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "MainWindow.xaml.cs",
+              "DocumentMoniker": "F:\\Poseidon\\Client\\PoseidonClient\\MainWindow.xaml.cs",
+              "RelativeDocumentMoniker": "Client\\PoseidonClient\\MainWindow.xaml.cs",
+              "ToolTip": "F:\\Poseidon\\Client\\PoseidonClient\\MainWindow.xaml.cs",
+              "RelativeToolTip": "Client\\PoseidonClient\\MainWindow.xaml.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAADwvwAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-11-21T19:29:18.42Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+F:\Poseidon\Modules\Poseidon.Lua\bin\Debug\net9.0\Poseidon.Lua.deps.json
+F:\Poseidon\Modules\Poseidon.Lua\bin\Debug\net9.0\Poseidon.Lua.dll
+F:\Poseidon\Modules\Poseidon.Lua\bin\Debug\net9.0\Poseidon.Lua.pdb
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.GeneratedMSBuildEditorConfig.editorconfig
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.AssemblyInfoInputs.cache
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.AssemblyInfo.cs
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.csproj.CoreCompileInputs.cache
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.sourcelink.json
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.dll
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\refint\Poseidon.Lua.dll
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\Poseidon.Lua.pdb
+F:\Poseidon\Modules\Poseidon.Lua\obj\Debug\net9.0\ref\Poseidon.Lua.dll

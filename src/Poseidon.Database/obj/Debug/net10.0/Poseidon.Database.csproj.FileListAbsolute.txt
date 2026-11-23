@@ -1,0 +1,12 @@
+F:\Poseidon\src\Poseidon.Database\bin\Debug\net10.0\Poseidon.Database.deps.json
+F:\Poseidon\src\Poseidon.Database\bin\Debug\net10.0\Poseidon.Database.dll
+F:\Poseidon\src\Poseidon.Database\bin\Debug\net10.0\Poseidon.Database.pdb
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.GeneratedMSBuildEditorConfig.editorconfig
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.AssemblyInfoInputs.cache
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.AssemblyInfo.cs
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.csproj.CoreCompileInputs.cache
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.sourcelink.json
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.dll
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\refint\Poseidon.Database.dll
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\Poseidon.Database.pdb
+F:\Poseidon\src\Poseidon.Database\obj\Debug\net10.0\ref\Poseidon.Database.dll

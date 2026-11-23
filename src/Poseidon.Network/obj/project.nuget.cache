@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "YkUn26yJl2A=",
+  "success": true,
+  "projectFilePath": "F:\\Poseidon\\src\\Poseidon.Network\\Poseidon.Network.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\RAVEN\\.nuget\\packages\\anthropic\\13.12.0\\anthropic.13.12.0.nupkg.sha512",
+    "C:\\Users\\RAVEN\\.nuget\\packages\\microsoft.extensions.ai.abstractions\\10.5.1\\microsoft.extensions.ai.abstractions.10.5.1.nupkg.sha512",
+    "C:\\Users\\RAVEN\\.nuget\\packages\\system.net.serversentevents\\10.0.1\\system.net.serversentevents.10.0.1.nupkg.sha512",
+    "C:\\Users\\RAVEN\\.nuget\\packages\\system.text.json\\10.0.6\\system.text.json.10.0.6.nupkg.sha512"
+  ],
+  "logs": []
+}
