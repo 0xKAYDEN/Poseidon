@@ -77,7 +77,7 @@ public class NodeView : Canvas
         // Script preview
         var scriptText = new TextBlock
         {
-            Text = viewModel.Script.Length > 30 ? viewModel.Script[..30] + "…" : viewModel.Script,
+            Text = viewModel.Script.Length > 30 ? viewModel.Script[..30] + "\u2026" : viewModel.Script,
             Foreground = Brushes.LightGray,
             FontSize = 9,
             TextWrapping = TextWrapping.Wrap,

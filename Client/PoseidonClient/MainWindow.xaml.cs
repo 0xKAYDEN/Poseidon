@@ -368,22 +368,22 @@ public partial class MainWindow : Window
         // Connector drag: update preview line
         if (_dragConnector is not null && _previewLine is not null)
         {
-            var dragPos = e.GetPosition(WorkflowCanvas);
-            _previewLine.X2 = dragPos.X;
-            _previewLine.Y2 = dragPos.Y;
+            var connectorPos = e.GetPosition(WorkflowCanvas);
+            _previewLine.X2 = connectorPos.X;
+            _previewLine.Y2 = connectorPos.Y;
             e.Handled = true;
             return;
         }
 
         if (!_isDraggingNode || _dragSourceNode != node) return;
 
-        var dragPos = e.GetPosition(WorkflowCanvas);
-        Canvas.SetLeft(node, dragPos.X - _dragOffset.X);
-        Canvas.SetTop(node, dragPos.Y - _dragOffset.Y);
+        var nodePos = e.GetPosition(WorkflowCanvas);
+        Canvas.SetLeft(node, nodePos.X - _dragOffset.X);
+        Canvas.SetTop(node, nodePos.Y - _dragOffset.Y);
 
         var vm = (NodeViewModel)node.DataContext;
-        vm.X = dragPos.X - _dragOffset.X;
-        vm.Y = dragPos.Y - _dragOffset.Y;
+        vm.X = nodePos.X - _dragOffset.X;
+        vm.Y = nodePos.Y - _dragOffset.Y;
 
         UpdateEdgesForNode(node);
         e.Handled = true;
@@ -560,39 +560,4 @@ public partial class MainWindow : Window
     }
 }
 
-// ---------------- data models ----------------
 
-public class NodeViewModel
-{
-    public string Id { get; set; }
-    public string Type { get; set; }
-    public string Name { get; set; }
-    public double X { get; set; }
-    public double Y { get; set; }
-    public string Script { get; set; }
-
-    public NodeViewModel(string id, string type, string name, double x, double y, string script)
-    {
-        Id = id;
-        Type = type;
-        Name = name;
-        X = x;
-        Y = y;
-        Script = script;
-    }
-}
-
-public class EdgeViewModel
-{
-    public string Id { get; } = Guid.NewGuid().ToString("N")[..8];
-    public string SourceNodeId { get; }
-    public string TargetNodeId { get; }
-    public string Condition { get; } // always | on_success | on_error | expression
-
-    public EdgeViewModel(string sourceNodeId, string targetNodeId, string condition)
-    {
-        SourceNodeId = sourceNodeId;
-        TargetNodeId = targetNodeId;
-        Condition = condition;
-    }
-}
