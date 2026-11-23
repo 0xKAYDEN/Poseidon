@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
-using NLua;
 
 namespace Poseidon.Lua.Lib;
 
@@ -10,17 +10,16 @@ namespace Poseidon.Lua.Lib;
 ///   local text = fs.read("input.txt")
 ///   fs.write("output.txt", text)
 ///   local ok = fs.exists("input.txt")
+/// Returns are marshaled by NLua automatically.
 /// </summary>
 public sealed class FsLib : LuaLib
 {
     private readonly string _root;
-    private readonly NLua.Lua _lua;
 
-    public FsLib(string sandboxRoot, NLua.Lua lua)
+    public FsLib(string sandboxRoot)
     {
         _root = Path.GetFullPath(sandboxRoot ?? throw new ArgumentNullException(nameof(sandboxRoot)));
         Directory.CreateDirectory(_root);
-        _lua = lua ?? throw new ArgumentNullException(nameof(lua));
     }
 
     public override string Name => "fs";
@@ -38,7 +37,9 @@ public sealed class FsLib : LuaLib
         public string? Read(string path) => _lib.Read(path);
         public void Write(string path, string content) => _lib.Write(path, content);
         public bool Exists(string path) => _lib.Exists(path);
-        public LuaTable List(string? directory = null) => _lib.List(directory);
+
+        /// <summary>Returns a list of filenames (NLua converts to Lua array table).</summary>
+        public List<object?> List(string? directory = null) => _lib.List(directory);
     }
 
     private string Resolve(string path)
@@ -80,17 +81,15 @@ public sealed class FsLib : LuaLib
         }
     }
 
-    private LuaTable List(string? directory)
+    private List<object?> List(string? directory)
     {
         string full = Resolve(directory ?? string.Empty);
-        if (!Directory.Exists(full)) return _lua.NewTable("");
-        LuaTable list = _lua.NewTable("");
-        int index = 1;
+        if (!Directory.Exists(full)) return new List<object?>();
+        var result = new List<object?>();
         foreach (var entry in Directory.GetFileSystemEntries(full))
         {
-            list[index] = Path.GetFileName(entry);
-            index++;
+            result.Add(Path.GetFileName(entry));
         }
-        return list;
+        return result;
     }
 }

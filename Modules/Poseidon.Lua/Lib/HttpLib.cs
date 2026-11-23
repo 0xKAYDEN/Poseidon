@@ -8,7 +8,7 @@ namespace Poseidon.Lua.Lib;
 /// HTTP client library exposed to Lua as the global `http` table:
 ///   local r = http.get("https://api.example.com", { Authorization = "Bearer ..." })
 ///   local r = http.post("https://api.example.com/items", json_body, { ... })
-/// Returns: { status_code = number, headers = table, body = string }
+/// Returns are marshaled by NLua from Dictionary to Lua tables automatically.
 /// </summary>
 public sealed class HttpLib : LuaLib
 {
@@ -17,13 +17,6 @@ public sealed class HttpLib : LuaLib
         Timeout = TimeSpan.FromSeconds(30),
         DefaultRequestHeaders = { UserAgent = { new ProductInfoHeaderValue("Poseidon", "1.0") } }
     };
-
-    private readonly NLua.Lua _lua;
-
-    public HttpLib(NLua.Lua lua)
-    {
-        _lua = lua ?? throw new ArgumentNullException(nameof(lua));
-    }
 
     public override string Name => "http";
 
@@ -38,12 +31,12 @@ public sealed class HttpLib : LuaLib
         private readonly HttpLib _lib;
         public Api(HttpLib lib) => _lib = lib;
 
-        public LuaTable Get(string url, LuaTable? headers = null) => _lib.Request(HttpMethod.Get, url, null, headers);
+        public Dictionary<string, object?> Get(string url, NLua.LuaTable? headers = null) => _lib.Request(HttpMethod.Get, url, null, headers);
 
-        public LuaTable Post(string url, string? body, LuaTable? headers = null) => _lib.Request(HttpMethod.Post, url, body, headers);
+        public Dictionary<string, object?> Post(string url, string? body, NLua.LuaTable? headers = null) => _lib.Request(HttpMethod.Post, url, body, headers);
     }
 
-    private LuaTable Request(HttpMethod method, string url, string? body, LuaTable? headers)
+    private Dictionary<string, object?> Request(HttpMethod method, string url, string? body, NLua.LuaTable? headers)
     {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
@@ -53,10 +46,10 @@ public sealed class HttpLib : LuaLib
         ApplyHeaders(request, headers);
 
         using var response = Client.SendAsync(request).GetAwaiter().GetResult();
-        return ToResponseTable(response);
+        return ToResponseDictionary(response);
     }
 
-    private static void ApplyHeaders(HttpRequestMessage request, LuaTable? headers)
+    private static void ApplyHeaders(HttpRequestMessage request, NLua.LuaTable? headers)
     {
         if (headers is null) return;
         foreach (var key in headers.Keys)
@@ -74,19 +67,21 @@ public sealed class HttpLib : LuaLib
         }
     }
 
-    private LuaTable ToResponseTable(System.Net.Http.HttpResponseMessage response)
+    private static Dictionary<string, object?> ToResponseDictionary(System.Net.Http.HttpResponseMessage response)
     {
-        LuaTable t = _lua.NewTable("");
-        t["status_code"] = (int)response.StatusCode;
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["status_code"] = (int)response.StatusCode
+        };
 
-        LuaTable hdr = _lua.NewTable("");
+        var hdr = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var h in response.Headers) hdr[h.Key] = string.Join(", ", h.Value);
         if (response.Content is not null)
         {
             foreach (var h in response.Content.Headers) hdr[h.Key] = string.Join(", ", h.Value);
         }
-        t["headers"] = hdr;
-        t["body"] = response.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
-        return t;
+        result["headers"] = hdr;
+        result["body"] = response.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
+        return result;
     }
 }

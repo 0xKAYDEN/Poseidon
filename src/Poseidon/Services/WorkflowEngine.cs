@@ -90,7 +90,7 @@ public sealed class WorkflowEngine
                 JsonSerializer.Serialize(inputs), ct);
 
             using var engine = CreateEngine(sharedState, log);
-            NLua.LuaTable module;
+            object module;
             try { module = engine.LoadScript("node_" + node.Id, scriptSource); }
             catch (Exception ex)
             {
@@ -203,7 +203,7 @@ public sealed class WorkflowEngine
         {
             new DbLib(lua, _db),
             new HttpLib(lua),
-            new FsLib(sandbox, lua),
+            new FsLib(sandbox),
             new CryptoLib(),
             new FlowLib(sharedState, log),
             new MailLib(log),

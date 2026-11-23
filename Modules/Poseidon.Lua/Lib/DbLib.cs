@@ -10,7 +10,7 @@ namespace Poseidon.Lua.Lib;
 /// Database library exposed to Lua as the global `db` table:
 ///   local rows = db.query("SELECT * FROM users WHERE id = ?", 42)
 ///   local affected = db.execute("INSERT INTO logs (...) VALUES (?)", "msg")
-/// Rows come back as a list of tables; cell values are string/number/bool/null.
+/// Returns are marshaled by NLua from Dictionary/object[] to Lua tables automatically.
 /// </summary>
 public sealed class DbLib : LuaLib
 {
@@ -35,8 +35,10 @@ public sealed class DbLib : LuaLib
         private readonly DbLib _lib;
         public Api(DbLib lib) => _lib = lib;
 
-        public LuaTable Query(string sql, params object?[] parameters) => _lib.Query(sql, parameters);
+        /// <summary>Returns a list of row dictionaries (NLua converts to Lua table).</summary>
+        public object Query(string sql, params object?[] parameters) => _lib.Query(sql, parameters);
 
+        /// <summary>Returns number of affected rows.</summary>
         public double Execute(string sql, params object?[] parameters)
         {
             int affected = _lib._db.ExecuteAsync(sql, parameters).GetAwaiter().GetResult();
@@ -44,25 +46,19 @@ public sealed class DbLib : LuaLib
         }
     }
 
-    private LuaTable Query(string sql, object?[] parameters)
+    /// <summary>Executes a query and returns rows as a list of dictionaries.</summary>
+    private List<object?> Query(string sql, object?[] parameters)
     {
         List<Dictionary<string, object?>> rows = _db.QueryAsync(sql, parameters).GetAwaiter().GetResult();
-        LuaTable list = _lua.NewTable("");
-        int index = 1;
+        var result = new List<object?>(rows.Count);
         foreach (var row in rows)
         {
-            LuaTable t = _lua.NewTable("");
-            foreach (var kv in row)
-            {
-                t[kv.Key] = ToLuaValue(kv.Value);
-            }
-            list[index] = t;
-            index++;
+            result.Add(row);
         }
-        return list;
+        return result;
     }
 
-    private static object ToLuaValue(object? value)
+    private static object? ToLuaValue(object? value)
     {
         return value switch
         {

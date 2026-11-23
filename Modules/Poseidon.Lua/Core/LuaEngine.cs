@@ -37,32 +37,32 @@ public sealed class LuaEngine : IDisposable
     }
 
     /// <summary>Loads a script chunk. Returns the module table the chunk evaluates to.</summary>
-    public LuaTable LoadScript(string name, string source)
+    public object LoadScript(string name, string source)
     {
         if (source is null) throw new ArgumentNullException(nameof(source));
         var chunk = _lua.LoadString(source, name);
         object[] result = chunk.Call();
-        if (result.Length == 0 || result[0] is not LuaTable table)
+        if (result.Length == 0)
         {
             throw new InvalidOperationException($"Script '{name}' did not return a module table");
         }
-        return table;
+        return result[0];
     }
 
     /// <summary>Executes run(context) on a loaded module table with a timeout.</summary>
-    public async Task<Dictionary<string, object?>> RunAsync(LuaTable module, Dictionary<string, object?> context, CancellationToken ct = default)
+    public async Task<Dictionary<string, object?>> RunAsync(object module, Dictionary<string, object?> context, CancellationToken ct = default)
     {
         if (module is null) throw new ArgumentNullException(nameof(module));
-        if (module["run"] is null) throw new InvalidOperationException("Script module is missing a 'run' function");
-        if (module["run"] is not LuaFunction run) throw new InvalidOperationException("'run' is not a function");
 
-        LuaTable contextTable = BuildContextTable(context);
+        // NLua converts Dictionary<string,object> to a Lua table automatically when passed to Lua.
+        var runFn = GetRunFunction(module);
+        if (runFn is null) throw new InvalidOperationException("Script module is missing a 'run' function");
 
         try
         {
             var task = Task.Run(() =>
             {
-                object[] result = run.Call(contextTable);
+                object[] result = runFn.Call(context);
                 return ToDictionary(result.Length > 0 ? result[0] : null);
             }, ct);
 
@@ -85,20 +85,19 @@ public sealed class LuaEngine : IDisposable
         _lua[name] = value;
     }
 
-    private LuaTable BuildContextTable(Dictionary<string, object?> context)
+    private static LuaFunction? GetRunFunction(object module)
     {
-        LuaTable table = _lua.NewTable("");
-        foreach (var kv in context)
+        if (module is NLua.LuaTable lt)
         {
-            table[kv.Key] = ToLuaValue(kv.Value);
+            if (lt["run"] is NLua.LuaFunction fn) return fn;
         }
-        return table;
+        return null;
     }
 
     private static Dictionary<string, object?> ToDictionary(object? value)
     {
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        if (value is LuaTable table)
+        if (value is NLua.LuaTable table)
         {
             foreach (var key in table.Keys)
             {
@@ -108,40 +107,11 @@ public sealed class LuaEngine : IDisposable
         return result;
     }
 
-    private object ToLuaValue(object? value)
-    {
-        return value switch
-        {
-            null => null!,
-            string s => s,
-            bool b => b,
-            byte => value,
-            short => value,
-            int => value,
-            long => value,
-            float => value,
-            double => value,
-            decimal d => (double)d,
-            IDictionary<string, object?> dict => FromDictionary(dict),
-            _ => value.ToString() ?? string.Empty
-        };
-    }
-
-    private LuaTable FromDictionary(IDictionary<string, object?> dict)
-    {
-        LuaTable table = _lua.NewTable("");
-        foreach (var kv in dict)
-        {
-            table[kv.Key] = ToLuaValue(kv.Value);
-        }
-        return table;
-    }
-
     private static object ToClrValue(object? value)
     {
         return value switch
         {
-            LuaTable lt => ToDictionary(lt),
+            NLua.LuaTable lt => ToDictionary(lt),
             string s => s,
             bool b => b,
             double d => d,

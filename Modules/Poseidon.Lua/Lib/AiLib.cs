@@ -12,21 +12,11 @@ namespace Poseidon.Lua.Lib;
 ///   local reply = ai.chat({ model = "gpt-4o-mini", messages = {
 ///       { role = "system", content = "You are a helpful assistant." },
 ///       { role = "user", content = "Summarize: " .. flow.get("text") } } })
-/// Returns: { content = string, model = string }
-///
-/// MVP behavior: if POSEIDON_AI_API_KEY is set, calls an OpenAI-compatible
-/// /chat/completions endpoint (POSEIDON_AI_URL, default https://api.openai.com/v1/chat/completions).
-/// Otherwise returns a deterministic stub so scripts can be developed without a key.
+/// Returns are marshaled by NLua from Dictionary to Lua tables automatically.
 /// </summary>
 public sealed class AiLib : LuaLib
 {
     private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromSeconds(60) };
-    private readonly NLua.Lua _lua;
-
-    public AiLib(NLua.Lua lua)
-    {
-        _lua = lua ?? throw new ArgumentNullException(nameof(lua));
-    }
 
     public override string Name => "ai";
 
@@ -40,12 +30,12 @@ public sealed class AiLib : LuaLib
         private readonly AiLib _lib;
         public Api(AiLib lib) => _lib = lib;
 
-        public LuaTable Chat(LuaTable? request)
+        public Dictionary<string, object?> Chat(NLua.LuaTable? request)
         {
             if (request is null) throw new ArgumentNullException(nameof(request));
 
             string model = request["model"]?.ToString() ?? "stub";
-            LuaTable? messages = request["messages"] as LuaTable;
+            NLua.LuaTable? messages = request["messages"] as NLua.LuaTable;
 
             string apiKey = Environment.GetEnvironmentVariable("POSEIDON_AI_API_KEY") ?? string.Empty;
             string apiUrl = Environment.GetEnvironmentVariable("POSEIDON_AI_URL")
@@ -92,12 +82,12 @@ public sealed class AiLib : LuaLib
             }
         }
 
-        private static string JoinMessages(LuaTable messages)
+        private static string JoinMessages(NLua.LuaTable messages)
         {
             var parts = new StringBuilder();
             foreach (var key in messages.Keys)
             {
-                if (messages[key] is LuaTable m)
+                if (messages[key] is NLua.LuaTable m)
                 {
                     string role = m["role"]?.ToString() ?? "?";
                     string content = m["content"]?.ToString() ?? string.Empty;
@@ -107,13 +97,13 @@ public sealed class AiLib : LuaLib
             return parts.ToString();
         }
 
-        private static object?[] MessagesToArray(LuaTable? messages)
+        private static object?[] MessagesToArray(NLua.LuaTable? messages)
         {
             var result = new List<object?>();
             if (messages is null) return result.ToArray();
             foreach (var key in messages.Keys)
             {
-                if (messages[key] is LuaTable m)
+                if (messages[key] is NLua.LuaTable m)
                 {
                     result.Add(new
                     {
@@ -125,12 +115,13 @@ public sealed class AiLib : LuaLib
             return result.ToArray();
         }
 
-        private LuaTable MakeResponse(string model, string content)
+        private static Dictionary<string, object?> MakeResponse(string model, string content)
         {
-            LuaTable t = _lib._lua.NewTable("");
-            t["content"] = content;
-            t["model"] = model;
-            return t;
+            return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["content"] = content,
+                ["model"] = model
+            };
         }
     }
 }
