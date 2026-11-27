@@ -16,6 +16,7 @@ export interface StepEvent {
 export interface ExecutionCallbacks {
   onStep?: (event: StepEvent) => void;
   onLog?: (executionId: number, workflowId: number, nodeId: number, message: string) => void;
+  onEvent?: (executionId: number, workflowId: number, nodeId: number, eventName: string, payload: unknown) => void;
   onComplete?: (executionId: number, workflowId: number, status: string, outputJson: string | null, error: string | null) => void;
 }
 
@@ -213,6 +214,9 @@ export class WorkflowEngine {
             signal: controller.signal,
             log: msg => {
               callbacks.onLog?.(executionId, workflowId, node.id, `[${node.name}] ${msg}`);
+            },
+            emitEvent: (eventName, payload) => {
+              callbacks.onEvent?.(executionId, workflowId, node.id, eventName, payload);
             }
           });
 

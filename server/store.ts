@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { AiProviderRegistry } from './aiProviders.js';
+import { ConnectionRegistry } from './connections.js';
 import { CredentialVault } from './crypto.js';
 
 export type EdgeConditionType = 'always' | 'on_success' | 'on_error' | 'expression';
@@ -42,8 +46,17 @@ export interface ScriptRecord {
   id: number;
   name: string;
   content: string;
+  category?: string;
+  description?: string;
   version: number;
   created_at: string;
+}
+
+export interface KvEntry {
+  key: string;
+  value: unknown;
+  expiresAt: number | null;
+  updatedAt: string;
 }
 
 export interface Execution {
@@ -134,6 +147,10 @@ export class PoseidonStore {
   private auditLogs: AuditLogRecord[] = [];
   private virtualFs = new Map<string, string>();
   private customTables = new Map<string, CustomTableMeta>();
+  private kvStore = new Map<string, KvEntry>();
+
+  public readonly aiProviders: AiProviderRegistry;
+  public readonly connections: ConnectionRegistry;
 
   private nextWorkflowId = 1;
   private nextNodeId = 1;
@@ -145,6 +162,8 @@ export class PoseidonStore {
   private nextAuditId = 1;
 
   constructor(private readonly vault: CredentialVault) {
+    this.aiProviders = new AiProviderRegistry(vault);
+    this.connections = new ConnectionRegistry(vault);
     this.seedDefaults();
   }
 
@@ -258,17 +277,358 @@ return {
 
     return {
       summary = reply.content or "",
-      model = reply.model or "stub"
+      model = reply.model or "stub",
+      provider = reply.provider
     }
   end
-}`
+}`,
+      'AI',
+      'Summarize upstream text using the active AI provider.'
+    );
+
+    this.createScript(
+      'ai_multi_provider.lua',
+      `-- Route prompts across multiple AI providers (OpenAI, Anthropic, Gemini, Groq, Ollama)
+-- with automatic fallback if the primary provider is unavailable.
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local prompt = inputs.prompt or "Explain event-driven workflow automation in two bullet points."
+    local primary = inputs.primary or "anthropic"
+    local fallback = inputs.fallback or "openai"
+
+    local available = ai.providers()
+    flow.log("Registered AI providers: " .. tostring(#available))
+
+    local res = ai.chat({
+      provider = primary,
+      system = "You are a concise engineering assistant.",
+      prompt = prompt,
+      temperature = 0.4,
+      max_tokens = 250
+    })
+
+    if not res.ok then
+      flow.log("Primary provider failed (" .. tostring(res.error) .. "), falling back to " .. fallback)
+      res = ai.chat({
+        provider = fallback,
+        prompt = prompt,
+        temperature = 0.4,
+        max_tokens = 250
+      })
+    end
+
+    return {
+      provider = res.provider,
+      model = res.model,
+      stub = res.stub,
+      latency_ms = res.latency_ms,
+      answer = res.content
+    }
+  end
+}`,
+      'AI',
+      'Route AI prompts across providers with automatic fallback.'
+    );
+
+    this.createScript(
+      'ai_custom_provider.lua',
+      `-- Call a saved custom provider by slug OR pass an inline custom HTTP/JSON AI endpoint.
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local useInline = inputs.inline == true
+
+    local reply
+    if useInline then
+      local secret = context.secrets and context.secrets.custom_ai_key and context.secrets.custom_ai_key.value
+      reply = ai.chat({
+        base_url = inputs.base_url or "http://localhost:11434",
+        api_format = inputs.api_format or "ollama",
+        api_key = secret,
+        model = inputs.model or "llama3.2",
+        headers = { ["X-Poseidon-Workflow"] = tostring(context.node.name) },
+        messages = {
+          { role = "user", content = inputs.prompt or "Say hello from Poseidon custom provider!" }
+        }
+      })
+    else
+      -- Calls a configured provider from the AI Providers tab (e.g., "ollama", "groq", or your custom slug)
+      reply = ai.complete(inputs.prompt or "Generate 3 Lua automation tips.", {
+        provider = inputs.provider or "ollama",
+        temperature = 0.6
+      })
+    end
+
+    flow.log("Custom AI response from " .. tostring(reply.provider) .. " (" .. tostring(reply.latency_ms) .. "ms)")
+    return reply
+  end
+}`,
+      'AI',
+      'Use a saved custom AI provider or inline base_url / api_format configuration.'
+    );
+
+    this.createScript(
+      'ai_embeddings.lua',
+      `-- Compute vector embeddings with ai.embed() and measure cosine similarity.
+local function cosine_similarity(a, b)
+  local dot, na, nb = 0, 0, 0
+  for i = 1, math.min(#a, #b) do
+    dot = dot + a[i] * b[i]
+    na = na + a[i] * a[i]
+    nb = nb + b[i] * b[i]
+  end
+  if na == 0 or nb == 0 then return 0 end
+  return dot / (math.sqrt(na) * math.sqrt(nb))
+end
+
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local queryText = inputs.query or "Lua workflow automation with encrypted WebSockets"
+    local docs = inputs.docs or {
+      "Poseidon executes sandboxed Lua pipelines over X25519 encrypted WebSockets.",
+      "How to bake sourdough bread at home.",
+      "SQL console and AES-256-GCM secret vault for automation scripts."
+    }
+
+    local qRes = ai.embed(queryText, { provider = inputs.provider })
+    local dRes = ai.embed(docs, { provider = inputs.provider })
+
+    local scored = {}
+    for i, docText in ipairs(docs) do
+      local vec = dRes.embeddings[i] or {}
+      local sim = cosine_similarity(qRes.embedding, vec)
+      table.insert(scored, { index = i, score = tonumber(string.format("%.4f", sim)), text = docText })
+    end
+    table.sort(scored, function(x, y) return x.score > y.score end)
+
+    flow.log("Ranked " .. tostring(#scored) .. " documents (" .. tostring(qRes.dimensions) .. " dims)")
+    return { provider = qRes.provider, stub = qRes.stub, dimensions = qRes.dimensions, ranked = scored }
+  end
+}`,
+      'AI',
+      'Compute vector embeddings and rank documents by cosine similarity.'
+    );
+
+    this.createScript(
+      'csv_etl_pipeline.lua',
+      `-- Parse CSV text, filter rows, save JSON/CSV output to sandbox FS, and upsert DB items.
+return {
+  run = function(context)
+    local rawCsv = (context.inputs and context.inputs.csv) or [[sku,title,category,stock,status
+PSD-201,Edge Cron Dispatcher,Automation,19,active
+PSD-202,CSV Stream Parser,Data,42,active
+PSD-203,Deprecated Tape Adapter,Legacy,0,archived]]
+
+    local rows = csv.parse(rawCsv, { header = true })
+    local activeRows = {}
+    for _, row in ipairs(rows) do
+      local stockNum = tonumber(row.stock) or 0
+      if row.status == "active" and stockNum > 0 then
+        table.insert(activeRows, {
+          sku = row.sku,
+          title = row.title,
+          category = row.category,
+          stock = stockNum,
+          status = row.status
+        })
+      end
+    end
+
+    local exportedCsv = csv.stringify(activeRows)
+    fs.write("exports/active_inventory.csv", exportedCsv)
+    fs.write_json("exports/active_inventory.json", activeRows)
+    flow.log("Parsed " .. tostring(#rows) .. " CSV rows; exported " .. tostring(#activeRows) .. " active rows")
+
+    return {
+      total_parsed = #rows,
+      active_count = #activeRows,
+      exported_csv = exportedCsv,
+      rows = activeRows
+    }
+  end
+}`,
+      'Data',
+      'Parse CSV input, transform active rows, and export CSV & JSON artifacts.'
+    );
+
+    this.createScript(
+      'webhook_hmac_verify.lua',
+      `-- Verify incoming webhook HMAC-SHA256 signature and deduplicate with persistent KV store.
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local secret = (context.secrets and context.secrets.webhook_secret and context.secrets.webhook_secret.value) or "poseidon-dev-secret"
+    local payloadObj = inputs.payload or { event_id = "evt_" .. crypto.uuid(), action = "order.paid", amount = 49.99 }
+    local rawBody = inputs.raw_body or json.encode(payloadObj)
+    local expectedSig = crypto.hmac_sha256(rawBody, secret)
+    local providedSig = inputs.signature or expectedSig
+
+    local valid = crypto.constant_time_equals(providedSig, expectedSig)
+    if not valid then
+      error("Invalid webhook signature")
+    end
+
+    local eventId = tostring(payloadObj.event_id or crypto.sha256(rawBody))
+    local dedupKey = "webhook:seen:" .. eventId
+    if kv.get(dedupKey) then
+      flow.log("Duplicate webhook ignored: " .. eventId)
+      return { accepted = false, duplicate = true, event_id = eventId }
+    end
+
+    kv.set(dedupKey, { seen_at = flow.now(), action = payloadObj.action }, 3600)
+    flow.emit("webhook_verified", { event_id = eventId, action = payloadObj.action })
+    flow.log("Verified and recorded webhook event " .. eventId)
+
+    return {
+      accepted = true,
+      duplicate = false,
+      event_id = eventId,
+      signature = expectedSig
+    }
+  end
+}`,
+      'Security',
+      'Validate HMAC-SHA256 webhook signatures and deduplicate events via kv.*.'
+    );
+
+    this.createScript(
+      'kv_state_cursor.lua',
+      `-- Maintain persistent state, counters, and sync cursors across workflow runs using kv.*.
+return {
+  run = function(context)
+    local counterKey = "demo:run_counter"
+    local prevCount = tonumber(kv.get(counterKey) or 0)
+    local nextCount = prevCount + 1
+
+    kv.set(counterKey, nextCount)
+    kv.set("demo:last_run", {
+      run_number = nextCount,
+      timestamp = flow.now(),
+      unix_ms = flow.unix_ms(),
+      node = context.node.name
+    }, 86400)
+
+    local allDemoKeys = kv.list("demo:")
+    flow.log("Persistent run counter = " .. tostring(nextCount) .. " (" .. tostring(#allDemoKeys) .. " keys)")
+
+    return {
+      run_number = nextCount,
+      keys = allDemoKeys,
+      last_run = kv.get("demo:last_run")
+    }
+  end
+}`,
+      'State',
+      'Persist counters and incremental cursors across executions with kv.*.'
+    );
+
+    this.createScript(
+      'text_template_report.lua',
+      `-- Build formatted notifications with text.template(), text.regex_match(), and encoding helpers.
+return {
+  run = function(context)
+    local rows = db.find("items", { status = "active" })
+    local lines = {}
+    for _, item in ipairs(rows) do
+      table.insert(lines, text.template("- [{{sku}}] {{title}} ({{stock}} in stock)", item))
+    end
+
+    local report = text.template([[
+Poseidon Inventory Report ({{date}})
+Active SKUs: {{count}}
+Slug Tag: {{slug}}
+{{items}}
+]], {
+      date = flow.now(),
+      count = #rows,
+      slug = text.slugify("Poseidon Inventory Report"),
+      items = table.concat(lines, "\\n")
+    })
+
+    fs.write("reports/latest_inventory.txt", report)
+    flow.log("Generated report (" .. tostring(#report) .. " bytes)")
+
+    return {
+      report = report,
+      base64_preview = encoding.base64_encode(string.sub(report, 1, 80)),
+      active_count = #rows
+    }
+  end
+}`,
+      'Formatting',
+      'Render structured reports using text.template, text.slugify, db.find, and fs.write.'
+    );
+
+    this.createScript(
+      'http_request_crud.lua',
+      `-- Unified HTTP client using http.request() with query params, JSON body, and encoding helpers.
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local resp = http.request({
+      method = inputs.method or "POST",
+      url = inputs.url or "https://jsonplaceholder.typicode.com/posts",
+      query = { source = "poseidon", tag = "lua automation" },
+      headers = { ["X-Request-Id"] = crypto.uuid() },
+      json = {
+        title = inputs.title or "Poseidon Automated Entry",
+        body = "Sent from Lua http.request at " .. flow.now(),
+        userId = 1
+      },
+      timeout_ms = 10000
+    })
+
+    flow.log("HTTP " .. tostring(resp.status_code) .. " received")
+    return {
+      status_code = resp.status_code,
+      parsed = resp.json,
+      encoded_tag = encoding.url_encode("lua automation & workflows")
+    }
+  end
+}`,
+      'Network',
+      'Send structured HTTP requests with query params, JSON auto-encoding, and headers.'
+    );
+
+    this.createScript(
+      'crypto_aes_vault.lua',
+      `-- Encrypt/decrypt sensitive payloads with AES-256-GCM and sign digests with HMAC-SHA512.
+return {
+  run = function(context)
+    local keyB64 = crypto.random_bytes(32)
+    local message = "Poseidon secret payload @ " .. flow.now()
+    local ptB64 = encoding.base64_encode(message)
+
+    local encrypted = crypto.aes_encrypt(ptB64, keyB64)
+    local decryptedB64 = crypto.aes_decrypt(encrypted, keyB64)
+    local roundTrip = encoding.base64_decode(decryptedB64)
+    local hmac512 = crypto.hmac_sha512(message, "signing-key")
+
+    flow.assert(roundTrip == message, "AES round-trip mismatch")
+    flow.log("AES-256-GCM round-trip verified + HMAC-SHA512 generated")
+
+    return {
+      verified = true,
+      ciphertext_b64 = encrypted,
+      plaintext = roundTrip,
+      sha512 = crypto.sha512(message),
+      hmac_sha512 = string.sub(hmac512, 1, 32) .. "..."
+    }
+  end
+}`,
+      'Security',
+      'Demonstrate AES-256-GCM encryption/decryption, SHA-512, and HMAC-SHA512.'
     );
 
     this.createScript(
       '1000.lua',
       `local ScriptID = 1000
 print("hello world from Script " .. tostring(ScriptID) .. "!")
-return { script_id = ScriptID, ok = true }`
+return { script_id = ScriptID, ok = true }`,
+      'Basics',
+      'Minimal starter Lua script printing Hello World.'
     );
 
     // Seed Workflow 1: Blueprint
@@ -440,9 +800,235 @@ return { script_id = ScriptID, ok = true }`
       edges: []
     });
 
+    // Seed Workflow 4: Multi-Provider AI Router Blueprint
+    this.createWorkflow({
+      name: 'Multi-Provider AI Pipeline',
+      description: 'Inspects configured AI providers, calls primary AI, and formats a templated briefing saved to sandbox FS.',
+      mode: 'blueprint',
+      trigger_type: 'manual',
+      is_active: true,
+      nodes: [
+        {
+          client_id: 'ai_prep',
+          type: 'code',
+          name: 'Build Prompt',
+          x: 70,
+          y: 140,
+          script: `return {
+  run = function(context)
+    local items = db.find("items", { status = "active" })
+    local providers = ai.providers()
+    flow.set("provider_count", #providers)
+    local prompt = text.template("Summarize health for {{count}} active automation modules.", { count = #items })
+    return { prompt = prompt, active_items = #items, registered_providers = #providers }
+  end
+}`
+        },
+        {
+          client_id: 'ai_run',
+          type: 'ai',
+          name: 'AI Provider Call',
+          x: 340,
+          y: 140,
+          script: `return {
+  run = function(context)
+    local prev = context.inputs.prev or {}
+    local provider = (context.inputs and context.inputs.provider) or nil
+    local res = ai.chat({
+      provider = provider,
+      system = "Be concise and technical.",
+      prompt = prev.prompt or "Summarize Poseidon status."
+    })
+    flow.log("Provider=" .. tostring(res.provider) .. " stub=" .. tostring(res.stub))
+    return res
+  end
+}`
+        },
+        {
+          client_id: 'ai_save',
+          type: 'file_ops',
+          name: 'Save Briefing',
+          x: 610,
+          y: 140,
+          script: `return {
+  run = function(context)
+    local prev = context.inputs.prev or {}
+    local doc = {
+      generated_at = flow.now(),
+      provider = prev.provider,
+      model = prev.model,
+      stub = prev.stub,
+      content = prev.content
+    }
+    fs.write_json("ai_briefing.json", doc)
+    kv.set("last_ai_briefing", doc, 3600)
+    return { saved = "ai_briefing.json", provider = prev.provider }
+  end
+}`
+        }
+      ],
+      edges: [
+        { source: 'ai_prep', target: 'ai_run', condition: 'on_success' },
+        { source: 'ai_run', target: 'ai_save', condition: 'on_success' }
+      ]
+    });
+
+    // Seed Workflow 5: CSV ETL & KV Deduplication Blueprint
+    this.createWorkflow({
+      name: 'CSV ETL & KV Sync',
+      description: 'Parses CSV rows, tracks processed SKUs in persistent kv.*, and writes cleaned exports.',
+      mode: 'blueprint',
+      trigger_type: 'manual',
+      is_active: true,
+      nodes: [
+        {
+          client_id: 'csv_in',
+          type: 'csv_parse',
+          name: 'Parse CSV Feed',
+          x: 90,
+          y: 140,
+          script: `return {
+  run = function(context)
+    local raw = (context.inputs and context.inputs.csv) or "sku,title,stock\\nPSD-301,Webhook Signer,14\\nPSD-302,KV Cache Engine,30"
+    local rows = csv.parse(raw, { header = true })
+    flow.log("Parsed " .. tostring(#rows) .. " CSV rows")
+    return { rows = rows }
+  end
+}`
+        },
+        {
+          client_id: 'kv_sync',
+          type: 'kv_store',
+          name: 'KV Dedup & Export',
+          x: 380,
+          y: 140,
+          script: `return {
+  run = function(context)
+    local prev = context.inputs.prev or {}
+    local rows = prev.rows or {}
+    local synced = 0
+    for _, row in ipairs(rows) do
+      local key = "sku:" .. tostring(row.sku)
+      if not kv.get(key) then
+        kv.set(key, row, 86400)
+        synced = synced + 1
+      end
+    end
+    local csvOut = csv.stringify(rows)
+    fs.write("csv_sync_latest.csv", csvOut)
+    flow.log("Synced " .. tostring(synced) .. " new SKU(s) into KV store")
+    return { total = #rows, newly_synced = synced, exported_file = "csv_sync_latest.csv" }
+  end
+}`
+        }
+      ],
+      edges: [{ source: 'csv_in', target: 'kv_sync', condition: 'on_success' }]
+    });
+
+    // Seed Workflow 6: Embeddings Similarity Demo
+    this.createWorkflow({
+      name: 'AI Embeddings Similarity',
+      description: 'Computes vector embeddings via ai.embed() and ranks candidate documents by cosine similarity.',
+      mode: 'code',
+      trigger_type: 'manual',
+      is_active: true,
+      nodes: [
+        {
+          client_id: 'emb1',
+          type: 'ai_embed',
+          name: 'Semantic Search',
+          x: 220,
+          y: 160,
+          script: `return {
+  run = function(context)
+    local query = (context.inputs and context.inputs.query) or "Encrypted WebSocket Lua automation"
+    local docs = {
+      "Poseidon executes sandboxed Lua pipelines over X25519 encrypted WebSockets.",
+      "Weekly grocery list: apples, bread, olive oil.",
+      "Multi-provider AI routing with OpenAI, Anthropic, Gemini, and custom endpoints."
+    }
+    local q = ai.embed(query)
+    local d = ai.embed(docs)
+    local ranked = {}
+    for i, text in ipairs(docs) do
+      local a, b = q.embedding, d.embeddings[i] or {}
+      local dot, na, nb = 0, 0, 0
+      for j = 1, math.min(#a, #b) do
+        dot = dot + a[j] * b[j]
+        na = na + a[j] * a[j]
+        nb = nb + b[j] * b[j]
+      end
+      local score = (na > 0 and nb > 0) and (dot / (math.sqrt(na) * math.sqrt(nb))) or 0
+      table.insert(ranked, { doc = text, score = tonumber(string.format("%.4f", score)) })
+    end
+    table.sort(ranked, function(x, y) return x.score > y.score end)
+    return { provider = q.provider, stub = q.stub, dimensions = q.dimensions, ranked = ranked }
+  end
+}`
+        }
+      ],
+      edges: []
+    });
+
+    const telegramScriptPath = path.resolve(process.cwd(), 'scripts/examples/telegram_ai_bot.lua');
+    let telegramBotScript = '';
+    try {
+      telegramBotScript = fs.readFileSync(telegramScriptPath, 'utf8');
+    } catch {
+      telegramBotScript = `-- Telegram AI Bot for Poseidon
+return {
+  run = function(context)
+    local inputs = context.inputs or {}
+    local secrets = context.secrets or {}
+    local token = inputs.bot_token or (secrets.telegram_bot_token and secrets.telegram_bot_token.value)
+    local msg = inputs.message or inputs.edited_message
+    if not token and not inputs.dry_run then
+      error("Missing telegram_bot_token in Vault or inputs.bot_token")
+    end
+    if type(msg) ~= "table" or not msg.chat then
+      return { ok = true, note = "Pass inputs.message or configure scripts/examples/telegram_ai_bot.lua" }
+    end
+    local reply = ai.chat({ provider = inputs.provider, prompt = tostring(msg.text or "") })
+    if not inputs.dry_run then
+      http.post("https://api.telegram.org/bot" .. token .. "/sendMessage", { chat_id = msg.chat.id, text = reply.content })
+    end
+    return { chat_id = msg.chat.id, reply = reply.content, provider = reply.provider }
+  end
+}`;
+    }
+
+    this.createScript(
+      'telegram_ai_bot.lua',
+      telegramBotScript,
+      'Integrations',
+      'Talk to any Poseidon AI provider from Telegram via webhook or getUpdates polling with per-chat kv.* memory and slash commands.'
+    );
+
+    // Seed Workflow 7: Telegram AI Chat Bot
+    this.createWorkflow({
+      name: 'Telegram AI Chat Bot',
+      description: 'Connects a Telegram bot to Poseidon AI providers (supports webhook updates and scheduled getUpdates polling with per-chat conversation history).',
+      mode: 'code',
+      trigger_type: 'manual',
+      is_active: true,
+      nodes: [
+        {
+          client_id: 'tg1',
+          type: 'code',
+          name: 'Telegram AI Bot',
+          x: 220,
+          y: 160,
+          script: telegramBotScript
+        }
+      ],
+      edges: []
+    });
+
     this.virtualFs.set('welcome.txt', `Poseidon sandbox initialized at ${now}`);
     this.virtualFs.set('config.json', JSON.stringify({ environment: 'development', maxRetries: 3 }, null, 2));
-    this.addAudit('system_boot', 'system', 'Seeded default workflows, Lua scripts, and database tables.');
+    this.kvSet('system:boot_at', now);
+    this.kvSet('system:version', '2.0.0-web');
+    this.addAudit('system_boot', 'system', 'Seeded workflows, Lua script templates, AI provider presets, KV store, and database tables.');
   }
 
   // ---------- Audit Log ----------
@@ -464,22 +1050,74 @@ return { script_id = ScriptID, ok = true }`
     return this.auditLogs;
   }
 
+  // ---------- KV Store (Persistent across runs) ----------
+
+  kvGet(key: string): unknown {
+    const entry = this.kvStore.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt !== null && Date.now() > entry.expiresAt) {
+      this.kvStore.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  kvSet(key: string, value: unknown, ttlSeconds?: number | null): KvEntry {
+    const expiresAt =
+      typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds) && ttlSeconds > 0
+        ? Date.now() + Math.round(ttlSeconds * 1000)
+        : null;
+    const entry: KvEntry = {
+      key,
+      value,
+      expiresAt,
+      updatedAt: new Date().toISOString()
+    };
+    this.kvStore.set(key, entry);
+    return entry;
+  }
+
+  kvDelete(key: string): boolean {
+    return this.kvStore.delete(key);
+  }
+
+  kvList(prefix?: string): Array<{ key: string; value: unknown; updatedAt: string }> {
+    const now = Date.now();
+    const out: Array<{ key: string; value: unknown; updatedAt: string }> = [];
+    for (const [k, entry] of this.kvStore.entries()) {
+      if (entry.expiresAt !== null && now > entry.expiresAt) {
+        this.kvStore.delete(k);
+        continue;
+      }
+      if (!prefix || k.startsWith(prefix)) {
+        out.push({ key: k, value: entry.value, updatedAt: entry.updatedAt });
+      }
+    }
+    return out.sort((a, b) => a.key.localeCompare(b.key));
+  }
+
   // ---------- Scripts ----------
 
   getScripts(): ScriptRecord[] {
     return Array.from(this.scripts.values()).sort((a, b) => a.id - b.id);
   }
 
-  createScript(name: string, content: string): ScriptRecord {
+  createScript(name: string, content: string, category?: string, description?: string): ScriptRecord {
     const record: ScriptRecord = {
       id: this.nextScriptId++,
-      name,
+      name: name.trim(),
       content,
+      category: category?.trim() || 'Custom',
+      description: description?.trim() || '',
       version: 1,
       created_at: new Date().toISOString()
     };
     this.scripts.set(record.id, record);
     return record;
+  }
+
+  deleteScript(id: number): boolean {
+    return this.scripts.delete(id);
   }
 
   // ---------- Workflows ----------
@@ -829,7 +1467,9 @@ return { script_id = ScriptID, ok = true }`
   }
 
   getDecryptedSecretsMap(): Record<string, Record<string, unknown>> {
-    const secrets: Record<string, Record<string, unknown>> = {};
+    const secrets: Record<string, Record<string, unknown>> = {
+      ...this.connections.getSecretsMapContributions()
+    };
     for (const cred of this.credentials.values()) {
       try {
         secrets[cred.name] = this.vault.decrypt(cred.encrypted_json);
@@ -888,7 +1528,7 @@ return { script_id = ScriptID, ok = true }`
       {
         name: 'scripts',
         kind: 'system',
-        columns: ['id', 'name', 'version', 'created_at'],
+        columns: ['id', 'name', 'category', 'version', 'created_at'],
         rowCount: this.scripts.size
       },
       {
@@ -902,6 +1542,24 @@ return { script_id = ScriptID, ok = true }`
         kind: 'system',
         columns: ['id', 'execution_id', 'node_name', 'status', 'duration_ms'],
         rowCount: this.steps.size
+      },
+      {
+        name: 'ai_providers',
+        kind: 'system',
+        columns: ['id', 'name', 'apiFormat', 'defaultModel', 'isDefault', 'hasApiKey', 'enabled'],
+        rowCount: this.aiProviders.listPublic().length
+      },
+      {
+        name: 'connections',
+        kind: 'system',
+        columns: ['id', 'name', 'label', 'category', 'endpointUrl', 'hasToken', 'enabled'],
+        rowCount: this.connections.listPublic().length
+      },
+      {
+        name: 'kv_store',
+        kind: 'system',
+        columns: ['key', 'value', 'updatedAt'],
+        rowCount: this.kvList().length
       },
       {
         name: 'credentials',
@@ -975,6 +1633,59 @@ return { script_id = ScriptID, ok = true }`
     return row;
   }
 
+  findCustomRows(tableName: string, where?: Record<string, unknown>): Array<Record<string, unknown>> {
+    const rows = this.getRawTableRows(tableName.toLowerCase());
+    if (!where || Object.keys(where).length === 0) return rows;
+    return rows.filter(row =>
+      Object.entries(where).every(([k, v]) => {
+        if (v === undefined) return true;
+        return String(row[k]) === String(v);
+      })
+    );
+  }
+
+  updateCustomRows(
+    tableName: string,
+    idOrWhere: number | string | Record<string, unknown>,
+    patch: Record<string, unknown>
+  ): number {
+    const table = this.customTables.get(tableName.toLowerCase());
+    if (!table) throw new Error(`Custom table "${tableName}" not found`);
+    const filterObj: Record<string, unknown> =
+      typeof idOrWhere === 'object' && idOrWhere !== null ? idOrWhere : { id: idOrWhere };
+
+    let updated = 0;
+    for (const row of table.rows) {
+      const matches = Object.entries(filterObj).every(([k, v]) => String(row[k]) === String(v));
+      if (!matches) continue;
+      for (const [k, v] of Object.entries(patch)) {
+        if (!table.columns.includes(k)) table.columns.push(k);
+        row[k] = v;
+      }
+      if (table.columns.includes('updated_at')) {
+        row.updated_at = new Date().toISOString();
+      }
+      updated++;
+    }
+    return updated;
+  }
+
+  deleteCustomRows(tableName: string, idOrWhere: number | string | Record<string, unknown>): number {
+    const table = this.customTables.get(tableName.toLowerCase());
+    if (!table) throw new Error(`Custom table "${tableName}" not found`);
+    const filterObj: Record<string, unknown> =
+      typeof idOrWhere === 'object' && idOrWhere !== null ? idOrWhere : { id: idOrWhere };
+    const before = table.rows.length;
+    table.rows = table.rows.filter(
+      row => !Object.entries(filterObj).every(([k, v]) => String(row[k]) === String(v))
+    );
+    return before - table.rows.length;
+  }
+
+  countTableRows(tableName: string): number {
+    return this.getRawTableRows(tableName.toLowerCase()).length;
+  }
+
   deleteCustomRowByIndex(tableName: string, rowId: number): boolean {
     const table = this.customTables.get(tableName.toLowerCase());
     if (!table) return false;
@@ -992,9 +1703,19 @@ return { script_id = ScriptID, ok = true }`
   }
 
   private isSystemTable(name: string): boolean {
-    return ['workflows', 'workflow_nodes', 'workflow_edges', 'scripts', 'executions', 'execution_steps', 'credentials', 'audit_log'].includes(
-      name.toLowerCase()
-    );
+    return [
+      'workflows',
+      'workflow_nodes',
+      'workflow_edges',
+      'scripts',
+      'executions',
+      'execution_steps',
+      'ai_providers',
+      'connections',
+      'kv_store',
+      'credentials',
+      'audit_log'
+    ].includes(name.toLowerCase());
   }
 
   private getRawTableRows(table: string): Array<Record<string, unknown>> {
@@ -1023,6 +1744,7 @@ return { script_id = ScriptID, ok = true }`
         return Array.from(this.scripts.values()).map(s => ({
           id: s.id,
           name: s.name,
+          category: s.category ?? 'Custom',
           version: s.version,
           created_at: s.created_at
         }));
@@ -1042,6 +1764,32 @@ return { script_id = ScriptID, ok = true }`
           node_name: s.node_name,
           status: s.status,
           duration_ms: s.duration_ms
+        }));
+      case 'ai_providers':
+        return this.aiProviders.listPublic().map(p => ({
+          id: p.id,
+          name: p.name,
+          apiFormat: p.apiFormat,
+          defaultModel: p.defaultModel,
+          isDefault: p.isDefault,
+          hasApiKey: p.hasApiKey,
+          enabled: p.enabled
+        }));
+      case 'connections':
+        return this.connections.listPublic().map(c => ({
+          id: c.id,
+          name: c.name,
+          label: c.label,
+          category: c.category,
+          endpointUrl: c.endpointUrl,
+          hasToken: c.hasToken,
+          enabled: c.enabled
+        }));
+      case 'kv_store':
+        return this.kvList().map(entry => ({
+          key: entry.key,
+          value: typeof entry.value === 'object' ? JSON.stringify(entry.value) : entry.value,
+          updatedAt: entry.updatedAt
         }));
       case 'credentials':
         return this.listCredentials().map(c => ({ ...c }));
@@ -1158,6 +1906,13 @@ return { script_id = ScriptID, ok = true }`
         if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
         return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
       });
+    }
+
+    // COUNT(*)
+    const countMatch = selectClause.match(/^count\s*\(\s*\*\s*\)(?:\s+as\s+([a-z0-9_]+))?$/i);
+    if (countMatch) {
+      const colName = countMatch[1] || 'count';
+      return [{ [colName]: rows.length }];
     }
 
     // LIMIT

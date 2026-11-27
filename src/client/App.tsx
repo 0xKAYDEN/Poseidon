@@ -1,25 +1,69 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient } from './api';
 import { SecureClientChannel } from './crypto/secureClientChannel';
+import { AIProvidersPage } from './components/AIProvidersPage';
 import { AuditFilesPage } from './components/AuditFilesPage';
+import { ConnectionsPage } from './components/ConnectionsPage';
 import { CredentialsModal } from './components/CredentialsModal';
 import { DatabasePage } from './components/DatabasePage';
 import { LoginPage } from './components/LoginPage';
 import { ScriptsPage } from './components/ScriptsPage';
 import { StudioPage } from './components/StudioPage';
-import type { LogEntry, WorkflowModel } from './types';
+import type { LogEntry, ScriptTemplate, WorkflowModel } from './types';
 
-type ActiveTab = 'studio' | 'scripts' | 'database' | 'audit';
+type ActiveTab = 'studio' | 'scripts' | 'providers' | 'connections' | 'database' | 'audit';
 
 function nowTime(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
+function readStorage(key: string): string | null {
+  try {
+    const local = localStorage.getItem(key);
+    if (local !== null) return local;
+  } catch {
+    // ignore storage restriction
+  }
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore storage restriction
+  }
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // ignore storage restriction
+  }
+}
+
+function removeStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore storage restriction
+  }
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore storage restriction
+  }
+}
+
 export const App: React.FC = () => {
-  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('poseidon_jwt'));
-  const [username, setUsername] = useState<string>(() => sessionStorage.getItem('poseidon_user') || 'admin');
+  const [token, setToken] = useState<string | null>(() => readStorage('poseidon_jwt'));
+  const [username, setUsername] = useState<string>(() => readStorage('poseidon_user') || 'testadmin');
+  const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('studio');
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowModel | null>(null);
+  const [draftTemplate, setDraftTemplate] = useState<ScriptTemplate | null>(null);
   const [wsEncrypted, setWsEncrypted] = useState(false);
   const [showCredentials, setShowCredentials] = useState(false);
 
@@ -36,7 +80,36 @@ export const App: React.FC = () => {
   const [studioExecutionId, setStudioExecutionId] = useState<number | null>(null);
 
   const channelRef = useRef<SecureClientChannel | null>(null);
-  const api = useMemo(() => new ApiClient(() => token), [token]);
+  const tokenRef = useRef<string | null>(token);
+  tokenRef.current = token;
+  const freshLoginTokenRef = useRef<string | null>(null);
+
+  const clearSessionState = useCallback((notice?: string) => {
+    freshLoginTokenRef.current = null;
+    tokenRef.current = null;
+    removeStorage('poseidon_jwt');
+    removeStorage('poseidon_user');
+    setSessionNotice(notice ?? null);
+    setToken(null);
+  }, []);
+
+  const api = useMemo(
+    () =>
+      new ApiClient(
+        () => tokenRef.current,
+        usedToken => {
+          if (usedToken === tokenRef.current) {
+            clearSessionState('Session rejected by server (401). Please sign in again.');
+          }
+        }
+      ),
+    [clearSessionState]
+  );
+
+  const handleLogout = useCallback(() => {
+    void api.logout().catch(() => {});
+    clearSessionState();
+  }, [api, clearSessionState]);
 
   const appendLog = useCallback((level: LogEntry['level'], message: string) => {
     setLogs(prev => [
@@ -80,6 +153,8 @@ export const App: React.FC = () => {
         }
       } else if (type === 'flow_log') {
         appendLog('info', String(msg.message ?? ''));
+      } else if (type === 'flow_event') {
+        appendLog('step', `Event [${String(msg.event ?? 'custom')}]: ${JSON.stringify(msg.payload ?? {})}`);
       } else if (type === 'execution_finished') {
         const execId = Number(msg.execution_id);
         const wfId = Number(msg.workflow_id);
@@ -117,17 +192,36 @@ export const App: React.FC = () => {
   }, [token, appendLog]);
 
   const handleLoginSuccess = (newToken: string, user: string) => {
-    sessionStorage.setItem('poseidon_jwt', newToken);
-    sessionStorage.setItem('poseidon_user', user);
+    freshLoginTokenRef.current = newToken;
+    tokenRef.current = newToken;
+    writeStorage('poseidon_jwt', newToken);
+    writeStorage('poseidon_user', user);
+    setSessionNotice(null);
     setToken(newToken);
     setUsername(user);
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('poseidon_jwt');
-    sessionStorage.removeItem('poseidon_user');
-    setToken(null);
-  };
+  useEffect(() => {
+    if (!token) return;
+    if (freshLoginTokenRef.current === token) {
+      freshLoginTokenRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    api
+      .getMe()
+      .then(me => {
+        if (!cancelled && me.username) {
+          setUsername(me.username);
+        }
+      })
+      .catch(() => {
+        // 401 is handled centrally by ApiClient.onUnauthorized
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, token]);
 
   const handleExecutionStarted = useCallback((executionId: number, workflowId: number) => {
     setStudioExecutionId(executionId);
@@ -135,7 +229,7 @@ export const App: React.FC = () => {
   }, []);
 
   if (!token) {
-    return <LoginPage api={api} onLoginSuccess={handleLoginSuccess} />;
+    return <LoginPage api={api} initialError={sessionNotice} onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -159,6 +253,20 @@ export const App: React.FC = () => {
             onClick={() => setActiveTab('scripts')}
           >
             Scripts
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${activeTab === 'providers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('providers')}
+          >
+            AI Providers
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${activeTab === 'connections' ? 'active' : ''}`}
+            onClick={() => setActiveTab('connections')}
+          >
+            Connections
           </button>
           <button
             type="button"
@@ -196,6 +304,8 @@ export const App: React.FC = () => {
         <StudioPage
           api={api}
           editingWorkflow={editingWorkflow}
+          draftTemplate={draftTemplate}
+          onConsumeDraftTemplate={() => setDraftTemplate(null)}
           nodeStatuses={nodeStatuses}
           activeExecutionId={studioExecutionId}
           logs={logs}
@@ -216,6 +326,12 @@ export const App: React.FC = () => {
             setNodeStatuses({});
             setActiveTab('studio');
           }}
+          onUseTemplate={tpl => {
+            setEditingWorkflow(null);
+            setDraftTemplate(tpl);
+            setNodeStatuses({});
+            setActiveTab('studio');
+          }}
           onCreateNew={() => {
             setEditingWorkflow(null);
             setNodeStatuses({});
@@ -225,6 +341,10 @@ export const App: React.FC = () => {
           onExecutionStarted={handleExecutionStarted}
         />
       )}
+
+      {activeTab === 'providers' && <AIProvidersPage api={api} onLog={appendLog} />}
+
+      {activeTab === 'connections' && <ConnectionsPage api={api} onLog={appendLog} />}
 
       {activeTab === 'database' && <DatabasePage api={api} onLog={appendLog} />}
 

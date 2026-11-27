@@ -1,7 +1,12 @@
+# Node / Web build output
+node_modules/
+dist/
+
 # Environment files (never commit real secrets)
 .env
 .env.local
 *.env
+.poseidon-dev-keys.json
 
 # Build output
 bin/

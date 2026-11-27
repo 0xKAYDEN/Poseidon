@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApiClient } from '../api';
 import {
+  LUA_FUNCTION_DOCS,
   NODE_PALETTE,
   getDefaultScriptForType,
+  type AiProviderModel,
   type CanvasEdgeDraft,
   type CanvasNodeDraft,
   type EdgeCondition,
@@ -16,6 +18,8 @@ import {
 interface StudioPageProps {
   api: ApiClient;
   editingWorkflow: WorkflowModel | null;
+  draftTemplate: ScriptTemplate | null;
+  onConsumeDraftTemplate: () => void;
   nodeStatuses: Record<string, string>;
   activeExecutionId: number | null;
   logs: LogEntry[];
@@ -33,6 +37,8 @@ function makeClientId(prefix = 'n'): string {
 export const StudioPage: React.FC<StudioPageProps> = ({
   api,
   editingWorkflow,
+  draftTemplate,
+  onConsumeDraftTemplate,
   nodeStatuses,
   activeExecutionId,
   logs,
@@ -67,6 +73,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   const [inputJsonText, setInputJsonText] = useState('{}');
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<ScriptTemplate[]>([]);
+  const [aiProviders, setAiProviders] = useState<AiProviderModel[]>([]);
+  const [showApiDocs, setShowApiDocs] = useState(false);
 
   // Canvas viewport state
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -91,7 +99,35 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
   useEffect(() => {
     api.getScripts().then(setTemplates).catch(() => {});
+    api.getAiProviders().then(setAiProviders).catch(() => {});
   }, [api]);
+
+  useEffect(() => {
+    if (!draftTemplate) return;
+    const starterId = makeClientId('n');
+    setWorkflowId(null);
+    setName(draftTemplate.name.replace(/\.lua$/i, ''));
+    setDescription(draftTemplate.description ?? '');
+    setMode('code');
+    setTriggerType('manual');
+    setScheduleSeconds(60);
+    setIsActive(true);
+    setNodes([
+      {
+        clientId: starterId,
+        type: 'code',
+        name: draftTemplate.name,
+        x: 160,
+        y: 140,
+        script: draftTemplate.content
+      }
+    ]);
+    setEdges([]);
+    setSelectedNodeId(starterId);
+    setSelectedEdgeId(null);
+    onLog('info', `Loaded template "${draftTemplate.name}" into Studio.`);
+    onConsumeDraftTemplate();
+  }, [draftTemplate, onConsumeDraftTemplate, onLog]);
 
   // Hydrate when editingWorkflow changes
   useEffect(() => {
@@ -916,6 +952,34 @@ export const StudioPage: React.FC<StudioPageProps> = ({
                       onChange={e => updateSelectedNode({ y: Number(e.target.value) || 0 })}
                     />
                   </div>
+                  {(selectedNode.type === 'ai' || selectedNode.type === 'ai_embed') && aiProviders.length > 0 && (
+                    <div className="prop-row">
+                      <label>AI Provider</label>
+                      <select
+                        defaultValue=""
+                        onChange={e => {
+                          const prov = aiProviders.find(p => p.id === e.target.value);
+                          if (!prov) return;
+                          const callFn =
+                            selectedNode.type === 'ai_embed'
+                              ? `return {\n  run = function(context)\n    local textInput = (context.inputs and context.inputs.text) or "Poseidon workflow"\n    local r = ai.embed(textInput, { provider = "${prov.id}" })\n    return { provider = r.provider, model = r.model, dimensions = r.dimensions, embedding = r.embedding }\n  end\n}`
+                              : `return {\n  run = function(context)\n    local prev = (context.inputs and context.inputs.prev) or {}\n    local prompt = (context.inputs and context.inputs.text) or prev.body or "Summarize Poseidon workflow status."\n    local r = ai.chat({\n      provider = "${prov.id}",\n      model = "${prov.defaultModel}",\n      messages = {\n        { role = "user", content = tostring(prompt) }\n      }\n    })\n    flow.log("AI [" .. tostring(r.provider) .. "] latency=" .. tostring(r.latency_ms) .. "ms")\n    return { reply = r.content, model = r.model, provider = r.provider, stub = r.stub }\n  end\n}`;
+                          updateSelectedNode({ script: callFn });
+                          onLog('info', `Applied AI provider "${prov.name}" (${prov.id}) to node "${selectedNode.name}".`);
+                          e.target.value = '';
+                        }}
+                      >
+                        <option value="" disabled>
+                          Use configured provider...
+                        </option>
+                        {aiProviders.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.defaultModel})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
@@ -936,31 +1000,40 @@ export const StudioPage: React.FC<StudioPageProps> = ({
 
             <div className="pane-header">
               <span>Lua Script</span>
-              {templates.length > 0 && selectedNode && (
-                <select
-                  aria-label="Load Lua example"
-                  defaultValue=""
-                  onChange={e => {
-                    const tpl = templates.find(t => String(t.id) === e.target.value);
-                    if (tpl) updateSelectedNode({ script: tpl.content });
-                    e.target.value = '';
-                  }}
-                  style={{ fontSize: '11.5px', padding: '3px 6px' }}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  style={{ padding: '3px 7px', fontSize: '11px' }}
+                  onClick={() => setShowApiDocs(true)}
                 >
-                  <option value="" disabled>
-                    Load example...
-                  </option>
-                  {templates.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
+                  API Docs
+                </button>
+                {templates.length > 0 && selectedNode && (
+                  <select
+                    aria-label="Load Lua example"
+                    defaultValue=""
+                    onChange={e => {
+                      const tpl = templates.find(t => String(t.id) === e.target.value);
+                      if (tpl) updateSelectedNode({ script: tpl.content });
+                      e.target.value = '';
+                    }}
+                    style={{ fontSize: '11.5px', padding: '3px 6px' }}
+                  >
+                    <option value="" disabled>
+                      Load example...
                     </option>
-                  ))}
-                </select>
-              )}
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             </div>
             <div className="lua-editor-wrap">
               <div className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                API: http · db · json · fs · crypto · flow · mail · ai
+                API: ai · http · db · kv · csv · text · encoding · crypto · fs · json · flow · notify · mail
               </div>
               <textarea
                 className="lua-textarea"
@@ -981,14 +1054,14 @@ export const StudioPage: React.FC<StudioPageProps> = ({
                 <span style={{ fontWeight: 600, fontSize: '12.5px', color: '#ffffff' }}>
                   Lua Script Editor
                 </span>
-                <span className="mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  http · db · json · fs · crypto · flow · mail · ai
-                </span>
+                <button type="button" style={{ padding: '3px 8px', fontSize: '11.5px' }} onClick={() => setShowApiDocs(true)}>
+                  Lua API Docs
+                </button>
                 <input
                   placeholder="Optional description..."
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  style={{ width: '240px' }}
+                  style={{ width: '210px' }}
                 />
                 {templates.length > 0 && (
                   <select
@@ -1007,6 +1080,28 @@ export const StudioPage: React.FC<StudioPageProps> = ({
                     {templates.map(t => (
                       <option key={t.id} value={t.id}>
                         {t.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {aiProviders.length > 0 && (
+                  <select
+                    defaultValue=""
+                    onChange={e => {
+                      const prov = aiProviders.find(p => p.id === e.target.value);
+                      if (prov && selectedNode) {
+                        const snippet = `\n-- AI Call (${prov.name})\nlocal aiReply = ai.chat({\n  provider = "${prov.id}",\n  model = "${prov.defaultModel}",\n  prompt = "Your prompt here"\n})\n`;
+                        updateSelectedNode({ script: `${selectedNode.script}\n${snippet}` });
+                      }
+                      e.target.value = '';
+                    }}
+                  >
+                    <option value="" disabled>
+                      Insert AI provider...
+                    </option>
+                    {aiProviders.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.id})
                       </option>
                     ))}
                   </select>
@@ -1033,7 +1128,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
                 spellCheck={false}
                 value={selectedNode?.script ?? ''}
                 onChange={e => updateSelectedNode({ script: e.target.value })}
-                placeholder={`-- Globals: http, db, json, fs, crypto, flow, mail, ai\nreturn {\n  run = function(context)\n    flow.log("hello world!")\n    return { ok = true }\n  end\n}`}
+                placeholder={`-- Globals: ai, http, db, kv, csv, text, encoding, crypto, fs, json, flow, notify, mail\nreturn {\n  run = function(context)\n    flow.log("hello world!")\n    return { ok = true }\n  end\n}`}
               />
             </div>
           </div>
@@ -1056,6 +1151,76 @@ export const StudioPage: React.FC<StudioPageProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Lua Sandbox API Reference Modal */}
+      {showApiDocs && (
+        <div className="modal-backdrop" onClick={() => setShowApiDocs(false)}>
+          <div className="modal-box" style={{ maxWidth: '820px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <strong style={{ fontSize: '14px', color: '#ffffff' }}>Poseidon Lua Sandbox API Reference</strong>
+              <button type="button" onClick={() => setShowApiDocs(false)}>Close</button>
+            </div>
+            <div className="modal-body" style={{ gap: '16px' }}>
+              {LUA_FUNCTION_DOCS.map(mod => (
+                <div
+                  key={mod.module}
+                  style={{
+                    background: 'var(--bg)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div>
+                    <strong className="mono" style={{ color: '#60a5fa', fontSize: '13px' }}>{mod.module}</strong>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      {mod.summary}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {mod.functions.map(fn => (
+                      <div
+                        key={fn.signature}
+                        style={{
+                          borderTop: '1px solid var(--border)',
+                          paddingTop: '8px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="mono" style={{ fontSize: '12px', color: '#ffffff' }}>{fn.signature}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '2px 0 4px' }}>
+                            {fn.description}
+                          </div>
+                          <code className="mono" style={{ fontSize: '11px', color: '#86efac', wordBreak: 'break-all' }}>
+                            {fn.snippet}
+                          </code>
+                        </div>
+                        <button
+                          type="button"
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                          onClick={() => {
+                            void navigator.clipboard?.writeText(fn.snippet);
+                            onLog('info', `Copied snippet: ${fn.signature}`);
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

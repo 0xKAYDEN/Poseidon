@@ -68,6 +68,9 @@ export const CredentialsModal: React.FC<CredentialsModalProps> = ({ api, onClose
             />
             <select value={type} onChange={e => setType(e.target.value)}>
               <option value="api_key">api_key</option>
+              <option value="ai_provider_key">ai_provider_key</option>
+              <option value="webhook_secret">webhook_secret</option>
+              <option value="bearer_token">bearer_token</option>
               <option value="http_basic">http_basic</option>
               <option value="oauth2">oauth2</option>
               <option value="mysql">mysql</option>

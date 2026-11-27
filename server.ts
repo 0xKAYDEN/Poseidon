@@ -1,9 +1,12 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import dotenv from 'dotenv';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { WebSocketServer, type WebSocket } from 'ws';
+import type { AiChatRequest, UpsertAiProviderInput } from './server/aiProviders.js';
+import type { UpsertConnectionInput } from './server/connections.js';
 import { CredentialVault, JwtService, PasswordHasher, SecureChannel } from './server/crypto.js';
 import {
   PoseidonStore,
@@ -16,6 +19,32 @@ import { WorkflowEngine } from './server/workflowEngine.js';
 
 dotenv.config();
 
+const DEV_KEYS_PATH = path.resolve(process.cwd(), '.poseidon-dev-keys.json');
+
+function loadDevKeys(): Record<string, string> {
+  try {
+    if (fs.existsSync(DEV_KEYS_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(DEV_KEYS_PATH, 'utf8')) as Record<string, unknown>;
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string') out[k] = v;
+      }
+      return out;
+    }
+  } catch {
+    // ignore malformed dev key file
+  }
+  return {};
+}
+
+function saveDevKeys(keys: Record<string, string>): void {
+  try {
+    fs.writeFileSync(DEV_KEYS_PATH, JSON.stringify(keys, null, 2), { mode: 0o600 });
+  } catch {
+    // ignore write failure in read-only env
+  }
+}
+
 function resolveKey32(envName: string): Buffer {
   const raw = process.env[envName];
   if (raw) {
@@ -25,9 +54,23 @@ function resolveKey32(envName: string): Buffer {
     } catch {
       // fall through
     }
-    console.warn(`[poseidon] ${envName} invalid (expected 32-byte base64) — generating ephemeral key`);
+    console.warn(`[poseidon] ${envName} invalid (expected 32-byte base64) — falling back to persisted dev key`);
   }
-  return crypto.randomBytes(32);
+
+  const devKeys = loadDevKeys();
+  if (devKeys[envName]) {
+    try {
+      const buf = Buffer.from(devKeys[envName], 'base64');
+      if (buf.length === 32) return buf;
+    } catch {
+      // fall through
+    }
+  }
+
+  const generated = crypto.randomBytes(32);
+  devKeys[envName] = generated.toString('base64');
+  saveDevKeys(devKeys);
+  return generated;
 }
 
 const masterKey = resolveKey32('POSEIDON_MASTER_KEY');
@@ -57,12 +100,55 @@ type AuthedRequest = Request & { user?: Record<string, unknown> };
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+function parseCookieValue(cookieHeader: string | undefined, name: string): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim();
+    if (k === name) {
+      try {
+        return decodeURIComponent(part.slice(idx + 1).trim());
+      } catch {
+        return part.slice(idx + 1).trim();
+      }
+    }
+  }
+  return null;
+}
+
+function isHttpsRequest(req: Request): boolean {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
+  const origin = String(req.headers.origin ?? '').toLowerCase();
+  const referer = String(req.headers.referer ?? '').toLowerCase();
+  return req.secure || forwardedProto.includes('https') || origin.startsWith('https://') || referer.startsWith('https://');
+}
+
+function setAuthCookie(req: Request, res: Response, token: string): void {
+  const isHttps = isHttpsRequest(req);
+  const attrs = isHttps
+    ? 'Path=/; HttpOnly; SameSite=None; Secure; Max-Age=28800'
+    : 'Path=/; HttpOnly; SameSite=Lax; Max-Age=28800';
+  res.setHeader('Set-Cookie', `poseidon_jwt=${encodeURIComponent(token)}; ${attrs}`);
+}
+
+function clearAuthCookie(req: Request, res: Response): void {
+  const isHttps = isHttpsRequest(req);
+  const attrs = isHttps
+    ? 'Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0'
+    : 'Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+  res.setHeader('Set-Cookie', `poseidon_jwt=; ${attrs}`);
+}
+
 // JWT middleware for /api/* (excluding health, auth, and webhook triggers)
 app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Cache-Control', 'no-store');
+
   if (
     req.path === '/health' ||
     req.path === '/auth/login' ||
     req.path === '/auth/register' ||
+    req.path === '/auth/logout' ||
     req.path === '/auth/info' ||
     req.path.startsWith('/webhooks/')
   ) {
@@ -70,15 +156,43 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
     return;
   }
 
+  const candidates: string[] = [];
+  const xToken = req.headers['x-poseidon-token'];
+  if (typeof xToken === 'string' && xToken.trim()) {
+    candidates.push(xToken.trim());
+  }
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const bearer = authHeader.slice('bearer '.length).trim();
+    if (bearer) candidates.push(bearer);
+  }
+  const cookieToken = parseCookieValue(req.headers.cookie, 'poseidon_jwt');
+  if (cookieToken) {
+    candidates.push(cookieToken);
+  }
+  const queryToken = req.query.__poseidon_token;
+  if (typeof queryToken === 'string' && queryToken.trim()) {
+    candidates.push(queryToken.trim());
+  }
+
+  if (candidates.length === 0) {
+    console.warn(
+      `[poseidon:auth] 401 missing token on ${req.method} ${req.path} (headerKeys=${Object.keys(req.headers).join(',')})`
+    );
     res.status(401).json({ error: 'missing token' });
     return;
   }
 
-  const token = authHeader.slice('bearer '.length).trim();
-  const claims = jwtService.validateToken(token);
+  let claims: Record<string, unknown> | null = null;
+  for (const cand of candidates) {
+    claims = jwtService.validateToken(cand);
+    if (claims) break;
+  }
+
   if (!claims) {
+    console.warn(
+      `[poseidon:auth] 401 invalid token on ${req.method} ${req.path} (xToken=${Boolean(xToken)} auth=${Boolean(authHeader)} cookie=${Boolean(cookieToken)} query=${Boolean(queryToken)})`
+    );
     res.status(401).json({ error: 'invalid token' });
     return;
   }
@@ -122,6 +236,8 @@ app.post('/api/auth/register', (req, res) => {
   registeredUsers.set(cleanUser, { passwordHash: PasswordHasher.hash(password), role: 'user' });
   store.addAudit('user_registered', cleanUser, `Registered new user account "${cleanUser}".`);
   const token = jwtService.createToken({ sub: cleanUser, role: 'user' }, 8 * 3600);
+  setAuthCookie(req, res, token);
+  console.log(`[poseidon:auth] registered user="${cleanUser}"`);
   res.status(201).json({ token, username: cleanUser, role: 'user' });
 });
 
@@ -130,12 +246,20 @@ app.post('/api/auth/login', (req, res) => {
   const cleanUser = (username ?? '').trim();
   const userRecord = registeredUsers.get(cleanUser);
   if (!cleanUser || !userRecord || !PasswordHasher.verify(password ?? '', userRecord.passwordHash)) {
+    console.warn(`[poseidon:auth] 401 bad credentials for user="${cleanUser}"`);
     res.status(401).json({ error: 'invalid credentials' });
     return;
   }
   store.addAudit('user_login', cleanUser, `Authenticated session started (${userRecord.role}).`);
   const token = jwtService.createToken({ sub: cleanUser, role: userRecord.role }, 8 * 3600);
+  setAuthCookie(req, res, token);
+  console.log(`[poseidon:auth] login success user="${cleanUser}" role="${userRecord.role}"`);
   res.json({ token, username: cleanUser, role: userRecord.role });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearAuthCookie(req, res);
+  res.json({ ok: true });
 });
 
 app.get('/api/auth/me', (req, res) => {
@@ -147,6 +271,28 @@ app.get('/api/auth/me', (req, res) => {
 
 app.get('/api/scripts', (_req, res) => {
   res.json(store.getScripts());
+});
+
+app.post('/api/scripts', (req, res) => {
+  const { name, content, category, description } = (req.body ?? {}) as {
+    name?: string;
+    content?: string;
+    category?: string;
+    description?: string;
+  };
+  if (!name?.trim() || typeof content !== 'string') {
+    res.status(400).json({ error: 'name and content are required' });
+    return;
+  }
+  const created = store.createScript(name.trim(), content, category, description);
+  store.addAudit('script_created', getActor(req), `Created Lua script template "${created.name}".`);
+  res.status(201).json(created);
+});
+
+app.delete('/api/scripts/:id', (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  const deleted = store.deleteScript(id);
+  res.status(deleted ? 204 : 404).send();
 });
 
 // ---------------- Workflows ----------------
@@ -272,6 +418,16 @@ function startWorkflowExecution(
         message
       });
     },
+    onEvent: (execId, wfId, nodeId, eventName, payload) => {
+      sessions.broadcast({
+        type: 'flow_event',
+        execution_id: execId,
+        workflow_id: wfId,
+        node_id: nodeId,
+        event: eventName,
+        payload
+      });
+    },
     onComplete: (execId, wfId, status, outputJson, error) => {
       sessions.broadcast({
         type: 'execution_finished',
@@ -309,7 +465,11 @@ app.post('/api/webhooks/:id', (req, res) => {
     res.status(404).json({ error: 'active workflow not found' });
     return;
   }
-  const initialInput = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const initialInput = (req.body && typeof req.body === 'object' ? { ...req.body } : {}) as Record<string, unknown>;
+  const tgSecret = req.headers['x-telegram-bot-api-secret-token'];
+  if (typeof tgSecret === 'string' && tgSecret.length > 0) {
+    initialInput._telegram_secret = tgSecret;
+  }
   const execution = startWorkflowExecution(id, 'webhook', initialInput);
   store.addAudit('webhook_triggered', 'webhook', `Webhook triggered "${wf.name}" (#${id}) -> execution #${execution.id}.`);
   res.status(202).json({ executionId: execution.id, status: execution.status });
@@ -448,12 +608,94 @@ app.post('/api/fs', (req, res) => {
   }
 });
 
-app.delete('/api/fs/:name', (req, res) => {
-  res.status(store.fsDelete(req.params.name) ? 204 : 404).send();
+app.delete('/api/fs/*', (req, res) => {
+  const fileName = decodeURIComponent(req.path.replace(/^\/api\/fs\//, ''));
+  res.status(store.fsDelete(fileName) ? 204 : 404).send();
 });
 
 app.get('/api/audit', (_req, res) => {
   res.json(store.getAuditLogs());
+});
+
+// ---------------- KV Store ----------------
+
+app.get('/api/kv', (req, res) => {
+  const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : undefined;
+  res.json(store.kvList(prefix));
+});
+
+app.delete('/api/kv/:key', (req, res) => {
+  res.status(store.kvDelete(req.params.key) ? 204 : 404).send();
+});
+
+// ---------------- AI Providers & Custom Connections ----------------
+
+app.get('/api/ai/presets', (_req, res) => {
+  res.json(store.aiProviders.getPresets());
+});
+
+app.get('/api/ai/providers', (_req, res) => {
+  res.json(store.aiProviders.listPublic());
+});
+
+app.post('/api/ai/providers', (req, res) => {
+  const body = (req.body ?? {}) as Partial<UpsertAiProviderInput>;
+  if (!body.name?.trim()) {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+  const saved = store.aiProviders.upsertProvider({
+    ...(body as UpsertAiProviderInput),
+    name: body.name.trim()
+  });
+  store.addAudit(
+    'ai_provider_saved',
+    getActor(req),
+    `Saved AI provider "${saved.name}" (${saved.id}, format=${saved.apiFormat}${saved.isCustom ? ', custom' : ''}).`
+  );
+  res.status(201).json(saved);
+});
+
+app.put('/api/ai/providers/:id', (req, res) => {
+  const body = (req.body ?? {}) as Partial<UpsertAiProviderInput>;
+  const existing = store.aiProviders.getPublic(req.params.id);
+  const saved = store.aiProviders.upsertProvider({
+    ...(body as UpsertAiProviderInput),
+    id: req.params.id,
+    name: body.name?.trim() || existing?.name || req.params.id
+  });
+  store.addAudit('ai_provider_updated', getActor(req), `Updated AI provider "${saved.name}" (${saved.id}).`);
+  res.json(saved);
+});
+
+app.post('/api/ai/providers/:id/default', (req, res) => {
+  const updated = store.aiProviders.setDefault(req.params.id);
+  if (!updated) {
+    res.status(404).json({ error: 'AI provider not found' });
+    return;
+  }
+  store.addAudit('ai_provider_default', getActor(req), `Set default AI provider to "${updated.name}" (${updated.id}).`);
+  res.json(updated);
+});
+
+app.post('/api/ai/providers/:id/test', async (req, res) => {
+  const result = await store.aiProviders.testProvider(req.params.id);
+  store.addAudit('ai_provider_tested', getActor(req), `Tested AI provider "${req.params.id}": ${result.message}`);
+  res.json(result);
+});
+
+app.delete('/api/ai/providers/:id', (req, res) => {
+  const deleted = store.aiProviders.deleteProvider(req.params.id);
+  if (deleted) {
+    store.addAudit('ai_provider_deleted', getActor(req), `Deleted AI provider "${req.params.id}".`);
+  }
+  res.status(deleted ? 204 : 404).send();
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+  const payload = (req.body ?? {}) as AiChatRequest;
+  const reply = await store.aiProviders.chat(payload);
+  res.json(reply);
 });
 
 // ---------------- Credentials (AES-256-GCM encrypted) ----------------
@@ -480,6 +722,97 @@ app.post('/api/credentials', (req, res) => {
 app.delete('/api/credentials/:id', (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   res.status(store.deleteCredential(id) ? 204 : 404).send();
+});
+
+// ---------------- Connections (Bots, Webhooks & Tokens) ----------------
+
+app.get('/api/connections/presets', (_req, res) => {
+  res.json(store.connections.getPresets());
+});
+
+app.get('/api/connections', (_req, res) => {
+  res.json(store.connections.listPublic());
+});
+
+app.post('/api/connections', (req, res) => {
+  const body = (req.body ?? {}) as Partial<UpsertConnectionInput>;
+  if (!body.name?.trim()) {
+    res.status(400).json({ error: 'Connection name is required' });
+    return;
+  }
+  try {
+    const saved = store.connections.upsertConnection({
+      ...(body as UpsertConnectionInput),
+      name: body.name.trim()
+    });
+    store.addAudit(
+      'connection_saved',
+      getActor(req),
+      `Saved ${saved.category} connection "${saved.name}" (${saved.label}).`
+    );
+    res.status(201).json(saved);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/connections/:id', (req, res) => {
+  const body = (req.body ?? {}) as Partial<UpsertConnectionInput>;
+  const existing = store.connections.getPublic(req.params.id);
+  if (!existing) {
+    res.status(404).json({ error: 'Connection not found' });
+    return;
+  }
+  try {
+    const saved = store.connections.upsertConnection({
+      ...(body as UpsertConnectionInput),
+      id: existing.id,
+      name: body.name?.trim() || existing.name
+    });
+    store.addAudit(
+      'connection_updated',
+      getActor(req),
+      `Updated ${saved.category} connection "${saved.name}" (${saved.label}).`
+    );
+    res.json(saved);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/connections/:id', (req, res) => {
+  const deleted = store.connections.deleteConnection(req.params.id);
+  if (deleted) {
+    store.addAudit('connection_deleted', getActor(req), `Deleted connection "${req.params.id}".`);
+  }
+  res.status(deleted ? 204 : 404).send();
+});
+
+app.post('/api/connections/:id/test', async (req, res) => {
+  const body = (req.body ?? {}) as { sendPing?: boolean; pingMessage?: string };
+  const result = await store.connections.testConnection(req.params.id, body);
+  store.addAudit('connection_tested', getActor(req), `Tested connection "${req.params.id}": ${result.message}`);
+  res.json(result);
+});
+
+app.post('/api/connections/:id/telegram/webhook-info', async (req, res) => {
+  const result = await store.connections.inspectTelegramWebhook(req.params.id);
+  res.json(result);
+});
+
+app.post('/api/connections/:id/telegram/set-webhook', async (req, res) => {
+  const body = (req.body ?? {}) as { webhookUrl?: string; dropPendingUpdates?: boolean };
+  const result = await store.connections.setTelegramWebhook(
+    req.params.id,
+    body.webhookUrl ?? '',
+    Boolean(body.dropPendingUpdates)
+  );
+  store.addAudit(
+    'telegram_webhook_updated',
+    getActor(req),
+    `Telegram webhook for "${req.params.id}": ${result.message}`
+  );
+  res.json(result);
 });
 
 // ---------------- Lightweight Workflow Schedule Runner ----------------

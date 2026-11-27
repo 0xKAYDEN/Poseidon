@@ -3,28 +3,39 @@ import type { ApiClient } from '../api';
 
 interface LoginPageProps {
   api: ApiClient;
+  initialError?: string | null;
   onLoginSuccess: (token: string, username: string) => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ api, onLoginSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ api, initialError = null, onLoginSuccess }) => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('testadmin');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
   const [demoHint, setDemoHint] = useState<{ defaultUsername: string; hasDefaultDemoPassword: boolean } | null>(null);
+
+  useEffect(() => {
+    if (initialError) {
+      setError(initialError);
+    }
+  }, [initialError]);
 
   useEffect(() => {
     api
       .getAuthInfo()
       .then(info => {
         setDemoHint(info);
-        if (info.defaultUsername && authMode === 'login') {
-          setUsername(info.defaultUsername);
-        }
       })
       .catch(() => {});
   }, [api]);
+
+  const fillDemoAccount = (demoUser: string, demoPassword: string) => {
+    setAuthMode('login');
+    setUsername(demoUser);
+    setPassword(demoPassword);
+    setError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +68,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onLoginSuccess }) => 
             className={authMode === 'login' ? 'active' : ''}
             onClick={() => {
               setAuthMode('login');
+              if (!username.trim()) {
+                setUsername('testadmin');
+              }
               setError(null);
             }}
           >
@@ -121,14 +135,29 @@ export const LoginPage: React.FC<LoginPageProps> = ({ api, onLoginSuccess }) => 
 
         {authMode === 'login' && (
           <div className="login-hint">
-            Test admin account: <strong className="mono">testadmin</strong> /{' '}
-            <strong className="mono">poseidon123</strong>
+            <div style={{ marginBottom: '8px' }}>
+              Test admin account:{' '}
+              <button
+                type="button"
+                className="btn-ghost mono"
+                style={{ padding: '2px 6px', fontSize: '12px', border: '1px solid var(--border)' }}
+                onClick={() => fillDemoAccount('testadmin', 'poseidon123')}
+              >
+                testadmin / poseidon123
+              </button>
+            </div>
             {demoHint?.hasDefaultDemoPassword && (
-              <span>
-                {' '}
-                · Default: <strong className="mono">{demoHint.defaultUsername}</strong> /{' '}
-                <strong className="mono">poseidon</strong>
-              </span>
+              <div>
+                Default admin:{' '}
+                <button
+                  type="button"
+                  className="btn-ghost mono"
+                  style={{ padding: '2px 6px', fontSize: '12px', border: '1px solid var(--border)' }}
+                  onClick={() => fillDemoAccount(demoHint.defaultUsername, 'poseidon')}
+                >
+                  {demoHint.defaultUsername} / poseidon
+                </button>
+              </div>
             )}
           </div>
         )}
