@@ -1,0 +1,65 @@
+declare module 'fengari' {
+  export const lua: {
+    LUA_OK: number;
+    LUA_YIELD: number;
+    LUA_ERRRUN: number;
+    LUA_ERRSYNTAX: number;
+    LUA_ERRMEM: number;
+    LUA_ERRERR: number;
+    LUA_TNIL: number;
+    LUA_TBOOLEAN: number;
+    LUA_TLIGHTUSERDATA: number;
+    LUA_TNUMBER: number;
+    LUA_TSTRING: number;
+    LUA_TTABLE: number;
+    LUA_TFUNCTION: number;
+    LUA_TUSERDATA: number;
+    LUA_TTHREAD: number;
+    LUA_MASKCOUNT: number;
+    lua_newthread(L: unknown): unknown;
+    lua_resume(L: unknown, from: unknown, narg: number): number;
+    lua_yield(L: unknown, nresults: number): number;
+    lua_pcall(L: unknown, nargs: number, nresults: number, errfunc: number): number;
+    lua_call(L: unknown, nargs: number, nresults: number): void;
+    lua_gettop(L: unknown): number;
+    lua_settop(L: unknown, idx: number): void;
+    lua_pop(L: unknown, n: number): void;
+    lua_pushnil(L: unknown): void;
+    lua_pushboolean(L: unknown, b: boolean | number): void;
+    lua_pushnumber(L: unknown, n: number): void;
+    lua_pushinteger(L: unknown, n: number): void;
+    lua_pushstring(L: unknown, s: Uint8Array): void;
+    lua_pushjsfunction(L: unknown, fn: (L: unknown) => number): void;
+    lua_createtable(L: unknown, narr: number, nrec: number): void;
+    lua_newtable(L: unknown): void;
+    lua_settable(L: unknown, idx: number): void;
+    lua_gettable(L: unknown, idx: number): number;
+    lua_rawseti(L: unknown, idx: number, n: number): void;
+    lua_rawgeti(L: unknown, idx: number, n: number): number;
+    lua_setglobal(L: unknown, name: Uint8Array): void;
+    lua_getglobal(L: unknown, name: Uint8Array): number;
+    lua_getfield(L: unknown, idx: number, k: Uint8Array): number;
+    lua_setfield(L: unknown, idx: number, k: Uint8Array): void;
+    lua_type(L: unknown, idx: number): number;
+    lua_toboolean(L: unknown, idx: number): boolean;
+    lua_tonumber(L: unknown, idx: number): number;
+    lua_tojsstring(L: unknown, idx: number): string;
+    lua_tolstring(L: unknown, idx: number): Uint8Array | null;
+    lua_next(L: unknown, idx: number): number;
+    lua_pushvalue(L: unknown, idx: number): void;
+    lua_sethook(L: unknown, func: ((L: unknown, ar: unknown) => void) | null, mask: number, count: number): void;
+    lua_error(L: unknown): number;
+    lua_close(L: unknown): void;
+  };
+  export const lauxlib: {
+    luaL_newstate(): unknown;
+    luaL_loadstring(L: unknown, s: Uint8Array): number;
+    luaL_dostring(L: unknown, s: Uint8Array): number;
+    luaL_error(L: unknown, fmt: Uint8Array): number;
+  };
+  export const lualib: {
+    luaL_openlibs(L: unknown): void;
+  };
+  export function to_luastring(str: string): Uint8Array;
+  export function to_jsstring(arr: Uint8Array): string;
+}
