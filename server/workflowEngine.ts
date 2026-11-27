@@ -52,6 +52,16 @@ export class WorkflowEngine {
     return this.activeAbortControllers.has(executionId);
   }
 
+  hasActiveWorkflowExecution(workflowId: number): boolean {
+    const executions = this.store.getExecutions(workflowId);
+    for (const ex of executions) {
+      if ((ex.status === 'running' || ex.status === 'queued') && this.activeAbortControllers.has(ex.id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   async executeAsync(
     workflowId: number,
     executionId: number,

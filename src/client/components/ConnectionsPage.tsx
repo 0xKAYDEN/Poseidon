@@ -239,6 +239,20 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
     [connections, isCreating, selectedId]
   );
 
+  const telegramBotWorkflow = useMemo(
+    () =>
+      workflows.find(w => w.id === Number(selectedWorkflowId)) ??
+      workflows.find(w => w.name.toLowerCase().includes('telegram')) ??
+      null,
+    [workflows, selectedWorkflowId]
+  );
+
+  const isTelegramPollingActive = Boolean(
+    telegramBotWorkflow &&
+      telegramBotWorkflow.is_active &&
+      telegramBotWorkflow.trigger_type === 'schedule'
+  );
+
   const startNewFromPreset = useCallback(
     (cat: ConnectionCategory, presetList: ConnectionPreset[] = presets) => {
       const p = presetList.find(item => item.category === cat) ?? presetList[0] ?? FALLBACK_PRESETS[0];
@@ -508,6 +522,120 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
       const res = await api.setTelegramWebhook(selectedConnection.id, webhookUrl);
       setWebhookStatusText(res.message);
       onLog(res.ok ? 'success' : 'error', res.message);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const runTelegramPollAndShowResult = async (wfId: number) => {
+    const started = await api.executeWorkflow(wfId, {});
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 250));
+      const details = await api.getExecutionDetails(started.executionId);
+      if (details.status !== 'queued' && details.status !== 'running') {
+        if (details.status === 'completed') {
+          const stepOut = details.steps?.[0]?.output_json ?? details.output_json ?? '{}';
+          setWebhookStatusText(`Poll #${started.executionId} completed: ${stepOut}`);
+          onLog('success', `Telegram poll #${started.executionId}: ${stepOut}`);
+        } else {
+          const stepErr = details.steps?.[0]?.error || details.error || 'Execution failed';
+          setError(`Telegram poll #${started.executionId} failed: ${stepErr}`);
+          onLog('error', `Telegram poll #${started.executionId} failed: ${stepErr}`);
+        }
+        return;
+      }
+    }
+    setWebhookStatusText(`Poll #${started.executionId} started (check Studio/Scripts logs).`);
+  };
+
+  const handleStartTelegramPolling = async () => {
+    if (!telegramBotWorkflow) return;
+    setTesting(true);
+    setError(null);
+    setWebhookStatusText(null);
+    try {
+      await api.updateWorkflow(telegramBotWorkflow.id, {
+        trigger_type: 'schedule',
+        schedule_seconds: 5,
+        is_active: true
+      });
+      const wfList = await api.getWorkflows();
+      setWorkflows(wfList);
+      setFeedback(`Live Telegram polling enabled for "${telegramBotWorkflow.name}" (#${telegramBotWorkflow.id}) every 5 seconds.`);
+      onLog('success', `Enabled 5s scheduled polling on "${telegramBotWorkflow.name}" (#${telegramBotWorkflow.id}).`);
+      await runTelegramPollAndShowResult(telegramBotWorkflow.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleStopTelegramPolling = async () => {
+    if (!telegramBotWorkflow) return;
+    setTesting(true);
+    setError(null);
+    try {
+      await api.updateWorkflow(telegramBotWorkflow.id, {
+        trigger_type: 'manual',
+        schedule_seconds: null
+      });
+      const wfList = await api.getWorkflows();
+      setWorkflows(wfList);
+      setWebhookStatusText('Live polling stopped (switched workflow back to Manual trigger).');
+      onLog('info', `Stopped scheduled polling on "${telegramBotWorkflow.name}" (#${telegramBotWorkflow.id}).`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handlePollTelegramOnce = async () => {
+    if (!telegramBotWorkflow) return;
+    setTesting(true);
+    setError(null);
+    setWebhookStatusText(null);
+    try {
+      await runTelegramPollAndShowResult(telegramBotWorkflow.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleRestoreTelegramScript = async () => {
+    if (!telegramBotWorkflow) return;
+    setTesting(true);
+    setError(null);
+    try {
+      const templates = await api.getScripts();
+      const tpl = templates.find(t => t.name === 'telegram_ai_bot.lua');
+      if (!tpl) {
+        setError('Built-in telegram_ai_bot.lua template not found.');
+        return;
+      }
+      await api.updateWorkflow(telegramBotWorkflow.id, {
+        mode: 'code',
+        nodes: [
+          {
+            client_id: telegramBotWorkflow.nodes[0]?.client_id || 'tg1',
+            type: 'code',
+            name: 'Telegram AI Bot',
+            script: tpl.content,
+            x: 220,
+            y: 160
+          }
+        ],
+        edges: []
+      });
+      const wfList = await api.getWorkflows();
+      setWorkflows(wfList);
+      setFeedback(`Restored clean Telegram AI Bot script on "${telegramBotWorkflow.name}" (#${telegramBotWorkflow.id}).`);
+      onLog('success', `Restored telegram_ai_bot.lua on workflow #${telegramBotWorkflow.id}.`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -976,7 +1104,7 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
           </div>
         </form>
 
-        {/* Telegram Webhook Endpoint Helper */}
+        {/* Telegram Webhook & Live Polling Helper */}
         {!isCreating && selectedConnection && selectedConnection.category === 'telegram' && (
           <div
             style={{
@@ -986,19 +1114,72 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
               padding: '16px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '10px'
+              gap: '12px'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
               <div>
-                <h3 style={{ fontSize: '14px', color: '#ffffff' }}>Telegram Webhook & Polling Helper</h3>
+                <h3 style={{ fontSize: '14px', color: '#ffffff' }}>Telegram Bot Live Listener & Webhook Helper</h3>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Point Telegram to a Poseidon workflow webhook, or run the Telegram AI Chat Bot in scheduled polling mode without a public URL.
+                  When running locally (no public HTTPS URL), enable <strong>Live Polling (5s)</strong> so Poseidon automatically checks Telegram and answers every DM with your default AI provider.
                 </p>
               </div>
+              {telegramBotWorkflow && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    color: isTelegramPollingActive ? 'var(--success)' : 'var(--text-muted)'
+                  }}
+                >
+                  {isTelegramPollingActive
+                    ? `Polling Active (every ${telegramBotWorkflow.schedule_seconds ?? 5}s)`
+                    : 'Polling Stopped (Manual)'}
+                </span>
+              )}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            {telegramBotWorkflow && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {!isTelegramPollingActive ? (
+                  <button
+                    type="button"
+                    className="btn-accent"
+                    disabled={testing || !selectedConnection.hasToken}
+                    onClick={() => void handleStartTelegramPolling()}
+                  >
+                    Start Live Polling (5s)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-danger"
+                    disabled={testing}
+                    onClick={() => void handleStopTelegramPolling()}
+                  >
+                    Stop Live Polling
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={testing || !selectedConnection.hasToken}
+                  onClick={() => void handlePollTelegramOnce()}
+                >
+                  Poll Now
+                </button>
+                <button
+                  type="button"
+                  disabled={testing}
+                  onClick={() => void handleRestoreTelegramScript()}
+                  title="Reset workflow script back to clean telegram_ai_bot.lua"
+                >
+                  Restore Default Bot Script
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
               <select
                 value={selectedWorkflowId}
                 onChange={e => setSelectedWorkflowId(e.target.value)}
@@ -1016,7 +1197,6 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
               </button>
               <button
                 type="button"
-                className="btn-accent"
                 disabled={testing || !selectedConnection.hasToken}
                 onClick={() => void handleSetTelegramWebhook(poseidonWebhookUrl)}
               >
@@ -1032,7 +1212,7 @@ export const ConnectionsPage: React.FC<ConnectionsPageProps> = ({ api, onLog }) 
             </div>
 
             {webhookStatusText && (
-              <div className="mono" style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+              <div className="mono" style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-word' }}>
                 {webhookStatusText}
               </div>
             )}

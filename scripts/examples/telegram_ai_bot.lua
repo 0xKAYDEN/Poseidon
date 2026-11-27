@@ -397,7 +397,7 @@ return {
     }
 
     -- Mode A: Webhook or direct single-message invocation
-    local directMsg = inputs.message or inputs.edited_message
+    local directMsg = inputs.message or inputs.edited_message or inputs.channel_post
     if type(directMsg) == "table" then
       local outcome = processTelegramMessage(directMsg, cfg)
       return {
@@ -414,8 +414,7 @@ return {
     -- Mode B: Polling Telegram getUpdates using persistent kv offset
     local offset = kv.get("tg:update_offset")
     local pollTimeout = tonumber(inputs.poll_timeout or 0) or 0
-    local allowedUpdates = encoding.url_encode('["message","edited_message"]')
-    local url = apiBase .. "/bot" .. botToken .. "/getUpdates?timeout=" .. tostring(pollTimeout) .. "&allowed_updates=" .. allowedUpdates
+    local url = apiBase .. "/bot" .. botToken .. "/getUpdates?timeout=" .. tostring(pollTimeout)
     if type(offset) == "number" and offset > 0 then
       url = url .. "&offset=" .. tostring(math.floor(offset))
     end
@@ -423,6 +422,9 @@ return {
     local resp = http.get(url)
     if not resp.ok or type(resp.json) ~= "table" or not resp.json.ok then
       local errDesc = (type(resp.json) == "table" and resp.json.description) or resp.body or ("HTTP " .. tostring(resp.status_code))
+      if resp.status_code == 409 then
+        error("Telegram webhook is currently active (HTTP 409). Open Connections -> click 'Delete Webhook (Polling)' to switch to polling mode. (" .. tostring(errDesc) .. ")")
+      end
       error("Telegram getUpdates failed: " .. tostring(errDesc))
     end
 
@@ -437,7 +439,7 @@ return {
             maxUpdateId = upd.update_id
           end
         end
-        local updMsg = upd.message or upd.edited_message
+        local updMsg = upd.message or upd.edited_message or upd.channel_post
         if type(updMsg) == "table" then
           local r = processTelegramMessage(updMsg, cfg)
           r.update_id = upd.update_id

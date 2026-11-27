@@ -822,6 +822,7 @@ setInterval(() => {
   const now = Date.now();
   for (const wf of store.getWorkflows()) {
     if (!wf.is_active || wf.trigger_type !== 'schedule') continue;
+    if (engine.hasActiveWorkflowExecution(wf.id)) continue;
     const intervalMs = Math.max(5, wf.schedule_seconds ?? 60) * 1000;
     const prev = lastScheduledRun.get(wf.id) ?? 0;
     if (now - prev >= intervalMs) {
