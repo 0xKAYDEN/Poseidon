@@ -404,6 +404,12 @@ function startWorkflowExecution(
 ) {
   const inputJson = Object.keys(initialInput).length > 0 ? JSON.stringify(initialInput) : null;
   const execution = store.createExecution(workflowId, triggerType, inputJson);
+  sessions.broadcast({
+    type: 'execution_started',
+    execution_id: execution.id,
+    workflow_id: workflowId,
+    trigger_type: triggerType
+  });
 
   void engine.executeAsync(workflowId, execution.id, initialInput, {
     onStep: stepEvent => {
@@ -475,11 +481,45 @@ app.post('/api/webhooks/:id', (req, res) => {
   res.status(202).json({ executionId: execution.id, status: execution.status });
 });
 
-app.post('/api/workflows/:id/stop', (req, res) => {
+app.post('/api/workflows/:id/stop', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
-  const stoppedCount = engine.stopWorkflowExecutions(id);
-  store.addAudit('workflow_stopped', getActor(req), `Stopped workflow #${id} (${stoppedCount} active run(s)).`);
-  res.json({ workflowId: id, stoppedCount });
+  const { stoppedIds, cancelledStaleIds } = engine.stopWorkflowExecutionsDetailed(id);
+  for (const staleId of cancelledStaleIds) {
+    sessions.broadcast({
+      type: 'execution_finished',
+      execution_id: staleId,
+      workflow_id: id,
+      status: 'cancelled',
+      output: null,
+      error: 'Stopped by user'
+    });
+  }
+  await engine.waitForWorkflow(id, 400);
+  store.addAudit('workflow_stopped', getActor(req), `Stopped workflow #${id} (${stoppedIds.length} active run(s)).`);
+  res.json({ workflowId: id, stoppedCount: stoppedIds.length, executionIds: stoppedIds });
+});
+
+app.post('/api/executions/stop-all', async (req, res) => {
+  const active = store.getExecutions().filter(e => e.status === 'running' || e.status === 'queued');
+  const stoppedIds: number[] = [];
+  for (const ex of active) {
+    const stopped = engine.stopExecution(ex.id);
+    if (!stopped) {
+      store.updateExecutionStatus(ex.id, 'cancelled', null, 'Stopped by user');
+      sessions.broadcast({
+        type: 'execution_finished',
+        execution_id: ex.id,
+        workflow_id: ex.workflow_id,
+        status: 'cancelled',
+        output: null,
+        error: 'Stopped by user'
+      });
+    }
+    stoppedIds.push(ex.id);
+  }
+  await Promise.all(stoppedIds.map(id => engine.waitForExecution(id, 400)));
+  store.addAudit('execution_stopped', getActor(req), `Stopped all active runs (${stoppedIds.length}).`);
+  res.json({ stoppedIds, stoppedCount: stoppedIds.length });
 });
 
 app.get('/api/executions', (req, res) => {
@@ -503,17 +543,28 @@ app.get('/api/executions/:id/steps', (req, res) => {
   res.json({ id, steps: store.getSteps(id) });
 });
 
-app.post('/api/executions/:id/stop', (req, res) => {
+app.post('/api/executions/:id/stop', async (req, res) => {
   const id = Number.parseInt(req.params.id, 10);
   const stopped = engine.stopExecution(id);
-  if (!stopped) {
+  if (stopped) {
+    await engine.waitForExecution(id, 400);
+  } else {
     const exec = store.getExecution(id);
     if (exec && (exec.status === 'running' || exec.status === 'queued')) {
       store.updateExecutionStatus(id, 'cancelled', null, 'Stopped by user');
+      sessions.broadcast({
+        type: 'execution_finished',
+        execution_id: id,
+        workflow_id: exec.workflow_id,
+        status: 'cancelled',
+        output: null,
+        error: 'Stopped by user'
+      });
     }
   }
+  const latest = store.getExecution(id);
   store.addAudit('execution_stopped', getActor(req), `Stopped execution #${id}.`);
-  res.json({ executionId: id, stopped: true });
+  res.json({ executionId: id, stopped: true, status: latest?.status ?? 'cancelled' });
 });
 
 // ---------------- Database Management & SQL Console ----------------
@@ -886,7 +937,21 @@ wss.on('connection', (ws: WebSocket) => {
         const exec = startWorkflowExecution(cmd.workflow_id, 'websocket', cmd.inputs ?? {});
         channel.sendFrame(ws, { type: 'execution_started', execution_id: exec.id, workflow_id: cmd.workflow_id });
       } else if (cmd.type === 'stop_execution' && cmd.execution_id) {
-        engine.stopExecution(cmd.execution_id);
+        const stopped = engine.stopExecution(cmd.execution_id);
+        if (!stopped) {
+          const exec = store.getExecution(cmd.execution_id);
+          if (exec && (exec.status === 'running' || exec.status === 'queued')) {
+            store.updateExecutionStatus(cmd.execution_id, 'cancelled', null, 'Stopped by user');
+            sessions.broadcast({
+              type: 'execution_finished',
+              execution_id: cmd.execution_id,
+              workflow_id: exec.workflow_id,
+              status: 'cancelled',
+              output: null,
+              error: 'Stopped by user'
+            });
+          }
+        }
         channel.sendFrame(ws, { type: 'execution_stopping', execution_id: cmd.execution_id });
       }
     } catch (err) {

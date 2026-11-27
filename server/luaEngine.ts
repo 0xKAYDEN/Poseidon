@@ -914,16 +914,28 @@ export async function runLuaScript(
     }
 
     const co = lua.lua_newthread(L);
+    let lastYieldAt = Date.now();
     lua.lua_sethook(
       co,
       (hookState: unknown) => {
         if (options.signal?.aborted) {
+          if (lua.lua_isyieldable(hookState)) {
+            lua.lua_yield(hookState, 0);
+            return;
+          }
           lua.lua_pushstring(hookState, to_luastring('Execution stopped by user'));
           lua.lua_error(hookState);
         }
         if (Date.now() - startedAt > timeoutMs) {
+          if (lua.lua_isyieldable(hookState)) {
+            lua.lua_yield(hookState, 0);
+            return;
+          }
           lua.lua_pushstring(hookState, to_luastring(`Lua script execution exceeded ${timeoutMs / 1000}s`));
           lua.lua_error(hookState);
+        }
+        if (Date.now() - lastYieldAt >= 15 && lua.lua_isyieldable(hookState)) {
+          lua.lua_yield(hookState, 0);
         }
       },
       lua.LUA_MASKCOUNT,
@@ -965,6 +977,7 @@ export async function runLuaScript(
       }
 
       const status = lua.lua_resume(co, L, narg);
+      if (options.signal?.aborted) throw new Error('Execution stopped by user');
       if (status === lua.LUA_OK) {
         const top = lua.lua_gettop(co);
         if (top === 0) return {};
@@ -977,6 +990,16 @@ export async function runLuaScript(
 
       if (status === lua.LUA_YIELD) {
         const top = lua.lua_gettop(co);
+        if (top === 0) {
+          await new Promise<void>(resolve => setImmediate(resolve));
+          if (options.signal?.aborted) throw new Error('Execution stopped by user');
+          if (Date.now() - startedAt > timeoutMs) {
+            throw new Error(`Lua script execution exceeded ${timeoutMs / 1000}s`);
+          }
+          lastYieldAt = Date.now();
+          narg = 0;
+          continue;
+        }
         const marker = top >= 1 ? lua.lua_tojsstring(co, 1) : '';
         if (marker !== '__poseidon_async') throw new Error('Unsupported Lua yield');
         const op = top >= 2 ? lua.lua_tojsstring(co, 2) : '';
@@ -1074,10 +1097,12 @@ export async function runLuaScript(
           pushJsValue(co, result);
           narg = 2;
         } catch (err) {
+          if (options.signal?.aborted) throw err;
           lua.lua_pushboolean(co, false);
           lua.lua_pushstring(co, to_luastring((err as Error).message));
           narg = 2;
         }
+        lastYieldAt = Date.now();
         continue;
       }
 

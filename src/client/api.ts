@@ -266,12 +266,16 @@ export class ApiClient {
     });
   }
 
-  stopWorkflow(id: number): Promise<{ workflowId: number; stoppedCount: number }> {
+  stopWorkflow(id: number): Promise<{ workflowId: number; stoppedCount: number; executionIds?: number[] }> {
     return this.request(`/api/workflows/${id}/stop`, { method: 'POST' });
   }
 
-  stopExecution(executionId: number): Promise<{ executionId: number; stopped: boolean }> {
+  stopExecution(executionId: number): Promise<{ executionId: number; stopped: boolean; status?: string }> {
     return this.request(`/api/executions/${executionId}/stop`, { method: 'POST' });
+  }
+
+  stopAllExecutions(): Promise<{ stoppedIds: number[]; stoppedCount: number }> {
+    return this.request('/api/executions/stop-all', { method: 'POST' });
   }
 
   getExecutions(workflowId?: number): Promise<ExecutionModel[]> {

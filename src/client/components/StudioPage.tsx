@@ -21,12 +21,13 @@ interface StudioPageProps {
   draftTemplate: ScriptTemplate | null;
   onConsumeDraftTemplate: () => void;
   nodeStatuses: Record<string, string>;
-  activeExecutionId: number | null;
+  activeWorkflowRuns: Record<number, number[]>;
   logs: LogEntry[];
   onLog: (level: LogEntry['level'], message: string) => void;
   onClearLogs: () => void;
   onSaved: (workflow: WorkflowModel) => void;
   onExecutionStarted: (executionId: number, workflowId: number) => void;
+  onExecutionStopped: (workflowId: number, executionId?: number) => void;
   onResetRunState: () => void;
 }
 
@@ -40,15 +41,20 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   draftTemplate,
   onConsumeDraftTemplate,
   nodeStatuses,
-  activeExecutionId,
+  activeWorkflowRuns,
   logs,
   onLog,
   onClearLogs,
   onSaved,
   onExecutionStarted,
+  onExecutionStopped,
   onResetRunState
 }) => {
   const [workflowId, setWorkflowId] = useState<number | null>(null);
+  const activeExecutionIds = workflowId !== null ? activeWorkflowRuns[workflowId] ?? [] : [];
+  const activeExecutionId =
+    activeExecutionIds.length > 0 ? activeExecutionIds[activeExecutionIds.length - 1] : null;
+  const canStopCurrent = activeExecutionIds.length > 0;
   const [name, setName] = useState('New Automation Script');
   const [description, setDescription] = useState('');
   const [mode, setMode] = useState<'blueprint' | 'code'>('blueprint');
@@ -393,10 +399,19 @@ export const StudioPage: React.FC<StudioPageProps> = ({
   };
 
   const handleStop = async () => {
-    if (!activeExecutionId) return;
+    if (!canStopCurrent) return;
     try {
-      await api.stopExecution(activeExecutionId);
-      onLog('error', `Stop requested for execution #${activeExecutionId}.`);
+      if (activeExecutionIds.length === 1 && activeExecutionId !== null) {
+        await api.stopExecution(activeExecutionId);
+      } else if (workflowId !== null) {
+        await api.stopWorkflow(workflowId);
+      } else if (activeExecutionId !== null) {
+        await api.stopExecution(activeExecutionId);
+      }
+      if (workflowId !== null) {
+        onExecutionStopped(workflowId);
+      }
+      onLog('error', `Stopped execution${activeExecutionId ? ` #${activeExecutionId}` : ''}.`);
     } catch (err) {
       onLog('error', `Stop failed: ${(err as Error).message}`);
     }
@@ -602,7 +617,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
             type="button"
             className="btn-accent"
             onClick={handleExecute}
-            disabled={saving || activeExecutionId !== null}
+            disabled={saving || canStopCurrent}
             title="Save and execute immediately on Poseidon server"
           >
             Save & Run
@@ -611,7 +626,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({
             type="button"
             className="btn-danger"
             onClick={handleStop}
-            disabled={activeExecutionId === null}
+            disabled={!canStopCurrent}
             title="Abort active server execution"
           >
             Stop

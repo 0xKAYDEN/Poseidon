@@ -19,6 +19,7 @@ declare module 'fengari' {
     lua_newthread(L: unknown): unknown;
     lua_resume(L: unknown, from: unknown, narg: number): number;
     lua_yield(L: unknown, nresults: number): number;
+    lua_isyieldable(L: unknown): number;
     lua_pcall(L: unknown, nargs: number, nresults: number, errfunc: number): number;
     lua_call(L: unknown, nargs: number, nresults: number): void;
     lua_gettop(L: unknown): number;

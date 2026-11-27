@@ -76,13 +76,13 @@ export const App: React.FC = () => {
     }
   ]);
   const [nodeStatuses, setNodeStatuses] = useState<Record<string, string>>({});
-  const [activeWorkflowRuns, setActiveWorkflowRuns] = useState<Record<number, number>>({});
-  const [studioExecutionId, setStudioExecutionId] = useState<number | null>(null);
+  const [activeWorkflowRuns, setActiveWorkflowRuns] = useState<Record<number, number[]>>({});
 
   const channelRef = useRef<SecureClientChannel | null>(null);
   const tokenRef = useRef<string | null>(token);
   tokenRef.current = token;
   const freshLoginTokenRef = useRef<string | null>(null);
+  const loggedFinishedExecsRef = useRef<Set<number>>(new Set());
 
   const clearSessionState = useCallback((notice?: string) => {
     freshLoginTokenRef.current = null;
@@ -90,6 +90,7 @@ export const App: React.FC = () => {
     removeStorage('poseidon_jwt');
     removeStorage('poseidon_user');
     setSessionNotice(notice ?? null);
+    setActiveWorkflowRuns({});
     setToken(null);
   }, []);
 
@@ -123,6 +124,65 @@ export const App: React.FC = () => {
     ]);
   }, []);
 
+  const markRunStarted = useCallback((executionId: number, workflowId: number) => {
+    if (!Number.isFinite(executionId) || !Number.isFinite(workflowId)) return;
+    setActiveWorkflowRuns(prev => {
+      const existing = prev[workflowId] ?? [];
+      if (existing.includes(executionId)) return prev;
+      return { ...prev, [workflowId]: [...existing, executionId] };
+    });
+  }, []);
+
+  const markRunFinished = useCallback(
+    (executionId: number, workflowId: number, status?: string, errorMsg?: string | null) => {
+      setActiveWorkflowRuns(prev => {
+        const existing = prev[workflowId];
+        if (!existing) return prev;
+        const filtered = existing.filter(id => id !== executionId);
+        if (filtered.length === existing.length) return prev;
+        const next = { ...prev };
+        if (filtered.length === 0) {
+          delete next[workflowId];
+        } else {
+          next[workflowId] = filtered;
+        }
+        return next;
+      });
+
+      if (status && !loggedFinishedExecsRef.current.has(executionId)) {
+        loggedFinishedExecsRef.current.add(executionId);
+        if (loggedFinishedExecsRef.current.size > 500) {
+          const oldest = loggedFinishedExecsRef.current.values().next().value;
+          if (oldest !== undefined) loggedFinishedExecsRef.current.delete(oldest);
+        }
+        if (status === 'completed') {
+          appendLog('success', `Execution #${executionId} completed.`);
+        } else {
+          appendLog('error', `Execution #${executionId} ${status}${errorMsg ? `: ${errorMsg}` : ''}`);
+        }
+      }
+    },
+    [appendLog]
+  );
+
+  const handleExecutionStopped = useCallback((workflowId: number, executionId?: number) => {
+    setActiveWorkflowRuns(prev => {
+      if (!(workflowId in prev)) return prev;
+      const next = { ...prev };
+      if (executionId !== undefined) {
+        const filtered = next[workflowId].filter(id => id !== executionId);
+        if (filtered.length === 0) {
+          delete next[workflowId];
+        } else {
+          next[workflowId] = filtered;
+        }
+      } else {
+        delete next[workflowId];
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!token) {
       channelRef.current?.disconnect();
@@ -137,7 +197,11 @@ export const App: React.FC = () => {
     const unsubStatus = channel.onStatusChange(enc => setWsEncrypted(enc));
     const unsubEvent = channel.onEvent(msg => {
       const type = String(msg.type ?? '');
-      if (type === 'step') {
+      if (type === 'execution_started') {
+        const execId = Number(msg.execution_id);
+        const wfId = Number(msg.workflow_id);
+        markRunStarted(execId, wfId);
+      } else if (type === 'step') {
         const clientId = String(msg.client_id ?? '');
         const status = String(msg.status ?? '');
         const nodeName = String(msg.node_name ?? msg.node_id ?? '');
@@ -159,17 +223,8 @@ export const App: React.FC = () => {
         const execId = Number(msg.execution_id);
         const wfId = Number(msg.workflow_id);
         const status = String(msg.status ?? '');
-        setActiveWorkflowRuns(prev => {
-          const next = { ...prev };
-          if (next[wfId] === execId) delete next[wfId];
-          return next;
-        });
-        setStudioExecutionId(prev => (prev === execId ? null : prev));
-        if (status === 'completed') {
-          appendLog('success', `Execution #${execId} completed.`);
-        } else {
-          appendLog('error', `Execution #${execId} ${status}${msg.error ? `: ${msg.error}` : ''}`);
-        }
+        const errorMsg = msg.error ? String(msg.error) : null;
+        markRunFinished(execId, wfId, status, errorMsg);
       } else if (type === 'error') {
         appendLog('error', `Server error: ${String(msg.error ?? 'unknown')}`);
       }
@@ -189,7 +244,7 @@ export const App: React.FC = () => {
       unsubEvent();
       channel.disconnect();
     };
-  }, [token, appendLog]);
+  }, [token, appendLog, markRunStarted, markRunFinished]);
 
   const handleLoginSuccess = (newToken: string, user: string) => {
     freshLoginTokenRef.current = newToken;
@@ -203,30 +258,125 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     if (freshLoginTokenRef.current === token) {
       freshLoginTokenRef.current = null;
-      return;
+    } else {
+      api
+        .getMe()
+        .then(me => {
+          if (!cancelled && me.username) {
+            setUsername(me.username);
+          }
+        })
+        .catch(() => {
+          // 401 is handled centrally by ApiClient.onUnauthorized
+        });
     }
-    let cancelled = false;
+
+    // Hydrate any already-running executions on the server (e.g. schedule/webhook or reload)
     api
-      .getMe()
-      .then(me => {
-        if (!cancelled && me.username) {
-          setUsername(me.username);
+      .getExecutions()
+      .then(list => {
+        if (cancelled) return;
+        const next: Record<number, number[]> = {};
+        for (const ex of list) {
+          if (ex.status === 'running' || ex.status === 'queued') {
+            if (!next[ex.workflow_id]) next[ex.workflow_id] = [];
+            next[ex.workflow_id].push(ex.id);
+          }
+        }
+        if (Object.keys(next).length > 0) {
+          setActiveWorkflowRuns(prev => {
+            const merged: Record<number, number[]> = { ...prev };
+            for (const [wfIdStr, ids] of Object.entries(next)) {
+              const wfId = Number(wfIdStr);
+              const existing = merged[wfId] ?? [];
+              merged[wfId] = Array.from(new Set([...existing, ...ids]));
+            }
+            return merged;
+          });
         }
       })
-      .catch(() => {
-        // 401 is handled centrally by ApiClient.onUnauthorized
-      });
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, [api, token]);
 
-  const handleExecutionStarted = useCallback((executionId: number, workflowId: number) => {
-    setStudioExecutionId(executionId);
-    setActiveWorkflowRuns(prev => ({ ...prev, [workflowId]: executionId }));
-  }, []);
+  const hasActiveRuns = Object.keys(activeWorkflowRuns).length > 0;
+  useEffect(() => {
+    if (!token || !hasActiveRuns) return;
+    let cancelled = false;
+    let inFlight = false;
+
+    const syncExecutions = async () => {
+      if (inFlight || cancelled) return;
+      inFlight = true;
+      try {
+        const list = await api.getExecutions();
+        if (cancelled) return;
+        const byId = new Map(list.map(e => [e.id, e]));
+
+        for (const ex of list) {
+          if (ex.status === 'running' || ex.status === 'queued') {
+            markRunStarted(ex.id, ex.workflow_id);
+          }
+        }
+
+        setActiveWorkflowRuns(prev => {
+          let changed = false;
+          const next: Record<number, number[]> = {};
+          for (const [wfIdStr, ids] of Object.entries(prev)) {
+            const wfId = Number(wfIdStr);
+            const stillActive: number[] = [];
+            for (const execId of ids) {
+              const srv = byId.get(execId);
+              if (!srv || srv.status === 'running' || srv.status === 'queued') {
+                stillActive.push(execId);
+              } else {
+                changed = true;
+                if (!loggedFinishedExecsRef.current.has(execId)) {
+                  loggedFinishedExecsRef.current.add(execId);
+                  if (srv.status === 'completed') {
+                    appendLog('success', `Execution #${execId} completed.`);
+                  } else {
+                    appendLog('error', `Execution #${execId} ${srv.status}${srv.error ? `: ${srv.error}` : ''}`);
+                  }
+                }
+              }
+            }
+            if (stillActive.length > 0) {
+              next[wfId] = stillActive;
+            }
+          }
+          return changed ? next : prev;
+        });
+      } catch {
+        // ignore transient poll errors
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const timer = setInterval(() => {
+      void syncExecutions();
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [api, token, hasActiveRuns, markRunStarted, appendLog]);
+
+  const handleExecutionStarted = useCallback(
+    (executionId: number, workflowId: number) => {
+      markRunStarted(executionId, workflowId);
+    },
+    [markRunStarted]
+  );
+
+  const totalActiveRuns = Object.values(activeWorkflowRuns).reduce((acc, ids) => acc + ids.length, 0);
 
   if (!token) {
     return <LoginPage api={api} initialError={sessionNotice} onLoginSuccess={handleLoginSuccess} />;
@@ -286,6 +436,17 @@ export const App: React.FC = () => {
 
         {/* Zone 3: Telemetry & User Action */}
         <div className="header-actions">
+          {totalActiveRuns > 0 && (
+            <button
+              type="button"
+              className="status-text running"
+              style={{ border: '1px solid var(--border-subtle)', padding: '3px 8px', borderRadius: '4px' }}
+              onClick={() => setActiveTab('scripts')}
+              title="View or stop currently running scripts"
+            >
+              {totalActiveRuns} running
+            </button>
+          )}
           <span className="ws-telemetry">
             <span className={`ws-dot ${wsEncrypted ? 'online' : ''}`} />
             {wsEncrypted ? 'Encrypted Channel' : 'Connecting'}
@@ -307,12 +468,13 @@ export const App: React.FC = () => {
           draftTemplate={draftTemplate}
           onConsumeDraftTemplate={() => setDraftTemplate(null)}
           nodeStatuses={nodeStatuses}
-          activeExecutionId={studioExecutionId}
+          activeWorkflowRuns={activeWorkflowRuns}
           logs={logs}
           onLog={appendLog}
           onClearLogs={() => setLogs([])}
           onSaved={wf => setEditingWorkflow(wf)}
           onExecutionStarted={handleExecutionStarted}
+          onExecutionStopped={handleExecutionStopped}
           onResetRunState={() => setNodeStatuses({})}
         />
       )}
@@ -322,6 +484,12 @@ export const App: React.FC = () => {
           api={api}
           activeWorkflowRuns={activeWorkflowRuns}
           onEditWorkflow={wf => {
+            if (
+              wf.latest_execution &&
+              (wf.latest_execution.status === 'running' || wf.latest_execution.status === 'queued')
+            ) {
+              markRunStarted(wf.latest_execution.id, wf.id);
+            }
             setEditingWorkflow(wf);
             setNodeStatuses({});
             setActiveTab('studio');
@@ -339,6 +507,7 @@ export const App: React.FC = () => {
           }}
           onLog={appendLog}
           onExecutionStarted={handleExecutionStarted}
+          onExecutionStopped={handleExecutionStopped}
         />
       )}
 

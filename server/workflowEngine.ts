@@ -22,6 +22,7 @@ export interface ExecutionCallbacks {
 
 export class WorkflowEngine {
   private readonly activeAbortControllers = new Map<number, AbortController>();
+  private readonly activePromises = new Map<number, Promise<void>>();
 
   constructor(private readonly store: PoseidonStore) {}
 
@@ -33,19 +34,50 @@ export class WorkflowEngine {
   }
 
   stopWorkflowExecutions(workflowId: number): number {
-    let stopped = 0;
+    return this.stopWorkflowExecutionsDetailed(workflowId).stoppedIds.length;
+  }
+
+  stopWorkflowExecutionsDetailed(workflowId: number): {
+    stoppedIds: number[];
+    cancelledStaleIds: number[];
+  } {
+    const stoppedIds: number[] = [];
+    const cancelledStaleIds: number[] = [];
     const executions = this.store.getExecutions(workflowId);
     for (const ex of executions) {
       if (ex.status === 'running' || ex.status === 'queued') {
         if (this.stopExecution(ex.id)) {
-          stopped++;
+          stoppedIds.push(ex.id);
         } else {
           this.store.updateExecutionStatus(ex.id, 'cancelled', null, 'Stopped by user');
-          stopped++;
+          stoppedIds.push(ex.id);
+          cancelledStaleIds.push(ex.id);
         }
       }
     }
-    return stopped;
+    return { stoppedIds, cancelledStaleIds };
+  }
+
+  async waitForExecution(executionId: number, timeoutMs = 400): Promise<void> {
+    const p = this.activePromises.get(executionId);
+    if (!p) return;
+    await Promise.race([
+      p,
+      new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+    ]);
+  }
+
+  async waitForWorkflow(workflowId: number, timeoutMs = 400): Promise<void> {
+    const pending: Promise<void>[] = [];
+    for (const ex of this.store.getExecutions(workflowId)) {
+      const p = this.activePromises.get(ex.id);
+      if (p) pending.push(p);
+    }
+    if (pending.length === 0) return;
+    await Promise.race([
+      Promise.all(pending).then(() => undefined),
+      new Promise<void>(resolve => setTimeout(resolve, timeoutMs))
+    ]);
   }
 
   isExecutionActive(executionId: number): boolean {
@@ -71,7 +103,8 @@ export class WorkflowEngine {
     const controller = new AbortController();
     this.activeAbortControllers.set(executionId, controller);
 
-    try {
+    const runPromise = (async () => {
+      try {
       this.store.markExecutionRunning(executionId);
 
       const nodes = this.store.getNodes(workflowId);
@@ -285,6 +318,10 @@ export class WorkflowEngine {
       callbacks.onComplete?.(executionId, workflowId, finalStatus, finalOutputJson, finalError);
     } finally {
       this.activeAbortControllers.delete(executionId);
+      this.activePromises.delete(executionId);
     }
+    })();
+    this.activePromises.set(executionId, runPromise);
+    await runPromise;
   }
 }

@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../api';
 import type { ExecutionModel, LogEntry, ScriptTemplate, WorkflowModel } from '../types';
 
 interface ScriptsPageProps {
   api: ApiClient;
-  activeWorkflowRuns: Record<number, number>; // workflowId -> executionId
+  activeWorkflowRuns: Record<number, number[]>; // workflowId -> executionIds
   onEditWorkflow: (workflow: WorkflowModel) => void;
   onUseTemplate: (template: ScriptTemplate) => void;
   onCreateNew: () => void;
   onLog: (level: LogEntry['level'], message: string) => void;
   onExecutionStarted: (executionId: number, workflowId: number) => void;
+  onExecutionStopped: (workflowId: number, executionId?: number) => void;
 }
 
 export const ScriptsPage: React.FC<ScriptsPageProps> = ({
@@ -19,7 +20,8 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
   onUseTemplate,
   onCreateNew,
   onLog,
-  onExecutionStarted
+  onExecutionStarted,
+  onExecutionStopped
 }) => {
   const [subTab, setSubTab] = useState<'workflows' | 'templates'>('workflows');
   const [workflows, setWorkflows] = useState<WorkflowModel[]>([]);
@@ -52,30 +54,42 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
     `return {\n  run = function(context)\n    flow.log("Custom template running")\n    return { ok = true, at = flow.now() }\n  end\n}`
   );
 
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [wfList, tplList] = await Promise.all([api.getWorkflows(), api.getScripts()]);
-      setWorkflows(wfList);
-      setTemplates(tplList);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
+  const loadSeqRef = useRef(0);
+
+  const loadAll = useCallback(
+    async (silent = false) => {
+      const seq = ++loadSeqRef.current;
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const [wfList, tplList] = await Promise.all([api.getWorkflows(), api.getScripts()]);
+        if (seq !== loadSeqRef.current) return;
+        setWorkflows(wfList);
+        setTemplates(tplList);
+      } catch (err) {
+        if (seq !== loadSeqRef.current) return;
+        setError((err as Error).message);
+      } finally {
+        if (seq === loadSeqRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [api]
+  );
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll, activeWorkflowRuns]);
+    void loadAll(workflows.length > 0);
+  }, [loadAll, activeWorkflowRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRun = async (wf: WorkflowModel) => {
     try {
       const res = await api.executeWorkflow(wf.id, {});
       onExecutionStarted(res.executionId, wf.id);
       onLog('info', `Started "${wf.name}" (execution #${res.executionId})`);
-      await loadAll();
+      await loadAll(true);
     } catch (err) {
       onLog('error', `Failed to run "${wf.name}": ${(err as Error).message}`);
     }
@@ -83,16 +97,30 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
 
   const handleStop = async (wf: WorkflowModel) => {
     try {
-      const activeExecId = activeWorkflowRuns[wf.id];
-      if (activeExecId) {
-        await api.stopExecution(activeExecId);
+      const activeExecIds = activeWorkflowRuns[wf.id] ?? [];
+      if (activeExecIds.length === 1) {
+        await api.stopExecution(activeExecIds[0]);
       } else {
         await api.stopWorkflow(wf.id);
       }
+      onExecutionStopped(wf.id);
       onLog('error', `Stopped "${wf.name}"`);
-      await loadAll();
+      await loadAll(true);
     } catch (err) {
       onLog('error', `Failed to stop "${wf.name}": ${(err as Error).message}`);
+    }
+  };
+
+  const handleStopAll = async () => {
+    try {
+      const res = await api.stopAllExecutions();
+      for (const wfIdStr of Object.keys(activeWorkflowRuns)) {
+        onExecutionStopped(Number(wfIdStr));
+      }
+      onLog('error', `Stopped all active runs (${res.stoppedCount}).`);
+      await loadAll(true);
+    } catch (err) {
+      onLog('error', `Failed to stop all runs: ${(err as Error).message}`);
     }
   };
 
@@ -278,6 +306,18 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
             Refresh
           </button>
 
+          {subTab === 'workflows' &&
+            workflows.some(
+              wf =>
+                (activeWorkflowRuns[wf.id]?.length ?? 0) > 0 ||
+                wf.latest_execution?.status === 'running' ||
+                wf.latest_execution?.status === 'queued'
+            ) && (
+              <button type="button" className="btn-danger" onClick={() => void handleStopAll()}>
+                Stop All Running
+              </button>
+            )}
+
           {subTab === 'workflows' ? (
             <button type="button" className="btn-accent" onClick={onCreateNew}>
               + New Script
@@ -307,8 +347,13 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
         ) : (
           <div className="scripts-grid">
             {filteredWorkflows.map(wf => {
-              const runningExecId = activeWorkflowRuns[wf.id];
-              const status = runningExecId ? 'running' : wf.latest_execution?.status ?? 'idle';
+              const runningExecIds = activeWorkflowRuns[wf.id] ?? [];
+              const isRunning =
+                runningExecIds.length > 0 ||
+                wf.latest_execution?.status === 'running' ||
+                wf.latest_execution?.status === 'queued';
+              const status =
+                runningExecIds.length > 0 ? 'running' : wf.latest_execution?.status ?? 'idle';
               const triggerLabel =
                 wf.trigger_type === 'schedule'
                   ? `every ${wf.schedule_seconds ?? 60}s`
@@ -359,7 +404,7 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
                     <button
                       type="button"
                       className="btn-accent"
-                      disabled={status === 'running'}
+                      disabled={isRunning}
                       onClick={() => void handleRun(wf)}
                     >
                       Run
@@ -367,7 +412,7 @@ export const ScriptsPage: React.FC<ScriptsPageProps> = ({
                     <button
                       type="button"
                       className="btn-danger"
-                      disabled={status !== 'running'}
+                      disabled={!isRunning}
                       onClick={() => void handleStop(wf)}
                     >
                       Stop
